@@ -1,0 +1,13 @@
+langchain
+langchain-openai
+langgraph
+chromadb
+prance
+requests
+pytest
+pytest-json-report
+click
+streamlit
+python-dotenv
+PyYAML
+tenacity

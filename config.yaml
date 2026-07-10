@@ -1,0 +1,14 @@
+openapi_path: data/petstore.yaml
+base_url: http://localhost:8000
+output_dir: generated_tests
+pytest_args:
+  - -q
+model:
+  provider: openai
+  name: deepseek-v4-pro
+  temperature: 0
+heal:
+  max_rounds: 3
+memory:
+  enable_long_memory: false
+  chroma_dir: .chroma

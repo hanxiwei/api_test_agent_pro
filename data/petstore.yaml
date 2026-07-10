@@ -1,0 +1,69 @@
+openapi: 3.0.3
+info:
+  title: Mini Petstore
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      tags: [pets]
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: createPet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "201":
+          description: Created
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPet
+      tags: [pets]
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+    put:
+      operationId: updatePet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "200":
+          description: OK
+    delete:
+      operationId: deletePet
+      tags: [pets]
+      responses:
+        "204":
+          description: No Content
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
