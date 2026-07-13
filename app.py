@@ -157,7 +157,7 @@ def _render_report(report: dict[str, Any], title: str) -> None:
 
 def _render_latest_summary(report: dict[str, Any] | None) -> None:
     if not report:
-        st.info("还没有最近一次运行报告，可以先执行 Generate 或 Heal。")
+        st.info("还没有最近一次运行报告，可以先执行“一键流水线”或“仅生成/仅修复”。")
         return
 
     _render_report(report, "最近一次运行概览")
@@ -171,7 +171,7 @@ st.markdown(
         <div class="hero-title">API Test Agent 控制台</div>
         <div class="hero-subtitle">
             这里把 OpenAPI 生成、pytest 回归、自愈修复和运行报告放到同一块面板里。
-            你可以先生成测试，再执行 heal，也可以直接上传规范文件走完整闭环。
+            你可以一键跑完整流水线，也可以按需拆分成“仅生成 / 仅修复”两步。
         </div>
         <div class="badge-row">
             <span class="badge">OpenAPI / Swagger</span>
@@ -237,7 +237,10 @@ with tab_run:
         """
         <div class="panel-card">
             <div class="section-title">流水线操作</div>
-            <div class="mini-note">Generate 负责从 OpenAPI 生成 pytest；Heal 会执行测试并在 code bug 条件下自动修复。</div>
+            <div class="mini-note">
+                一键流水线：OpenAPI → Generate pytest → 执行 pytest → 失败则自动自愈（最多 3 轮）→ 输出报告。<br/>
+                你也可以按需只生成测试，或只对已有 tests 目录执行自愈。
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -247,7 +250,29 @@ with tab_run:
     btn_col1, btn_col2, btn_col3 = st.columns(3)
 
     with btn_col1:
-        if st.button("Generate 测试", use_container_width=True):
+        if st.button("一键流水线", use_container_width=True):
+            openapi_path = _resolve_openapi_path(source_mode, uploaded, local_openapi_path)
+            if openapi_path is None:
+                st.warning("请先上传 OpenAPI 文件，或填写一个存在的本地路径。")
+            else:
+                with st.spinner("正在执行流水线：生成测试 → 执行 pytest → 自愈修复..."):
+                    settings = load_settings(
+                        config_path,
+                        overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
+                    )
+                    files = run_generate(settings=settings, openapi_path=openapi_path, output_dir=output_dir)
+                    report = run_heal(settings=settings, tests_path=Path(output_dir))
+                st.session_state.last_generated_files = [str(x) for x in files]
+                report_dict = report.to_dict()
+                report_dict["generated_files"] = st.session_state.last_generated_files
+                st.session_state.last_action_report = report_dict
+                if report.ok:
+                    st.success("流水线执行完成。")
+                else:
+                    st.warning("流水线执行完成，但仍有待处理问题。")
+
+    with btn_col2:
+        if st.button("仅生成测试", use_container_width=True):
             openapi_path = _resolve_openapi_path(source_mode, uploaded, local_openapi_path)
             if openapi_path is None:
                 st.warning("请先上传 OpenAPI 文件，或填写一个存在的本地路径。")
@@ -275,30 +300,24 @@ with tab_run:
                 }
                 st.success(f"生成完成，共输出 {len(files)} 个测试文件。")
 
-    with btn_col2:
-        if st.button("Heal 自愈", use_container_width=True):
+    with btn_col3:
+        if st.button("仅对已有 tests 自愈", use_container_width=True):
             with st.spinner("正在执行 pytest 与自愈修复流程..."):
                 settings = load_settings(
                     config_path,
                     overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
                 )
-                final_tests_dir = Path(tests_dir)
-                if source_mode == "上传文件" and uploaded is not None:
-                    openapi_path = _resolve_openapi_path(source_mode, uploaded, local_openapi_path)
-                    if openapi_path is not None:
-                        run_generate(settings=settings, openapi_path=openapi_path, output_dir=output_dir)
-                        final_tests_dir = Path(output_dir)
-                report = run_heal(settings=settings, tests_path=final_tests_dir)
+                report = run_heal(settings=settings, tests_path=Path(tests_dir))
             st.session_state.last_action_report = report.to_dict()
             if report.ok:
-                st.success("Heal 流程执行完成。")
+                st.success("自愈执行完成。")
             else:
-                st.warning("Heal 流程执行完成，但仍有待处理问题。")
+                st.warning("自愈执行完成，但仍有待处理问题。")
 
-    with btn_col3:
-        if st.button("刷新最近报告", use_container_width=True):
-            st.session_state.last_action_report = load_run_report()
-            st.success("最近报告已刷新。")
+    st.write("")
+    if st.button("刷新最近报告", use_container_width=True):
+        st.session_state.last_action_report = load_run_report()
+        st.success("最近报告已刷新。")
 
     action_report = st.session_state.last_action_report
     if action_report is not None:

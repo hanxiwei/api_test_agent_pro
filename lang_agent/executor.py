@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -38,7 +39,9 @@ def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str |
         f"--json-report-file={report_path}",
         *pytest_args,
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env)
     report = None
     if report_path.exists():
         try:
@@ -68,4 +71,3 @@ def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str |
         report=report,
         failures=failures,
     )
-

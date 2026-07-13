@@ -1,0 +1,132 @@
+openapi: 3.0.3
+info:
+  title: Todo Demo API
+  version: 1.0.0
+  description: 一个用于实验 API Test Agent 的示例 OpenAPI 文档。
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: todos
+paths:
+  /todos:
+    get:
+      tags: [todos]
+      operationId: listTodos
+      summary: 获取待办列表
+      responses:
+        "200":
+          description: 返回待办列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Todo"
+    post:
+      tags: [todos]
+      operationId: createTodo
+      summary: 新增待办
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TodoCreate"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+  /todos/{todoId}:
+    get:
+      tags: [todos]
+      operationId: getTodo
+      summary: 根据 ID 查询待办
+      parameters:
+        - in: path
+          name: todoId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        "404":
+          description: 未找到
+    put:
+      tags: [todos]
+      operationId: updateTodo
+      summary: 更新待办
+      parameters:
+        - in: path
+          name: todoId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TodoUpdate"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        "404":
+          description: 未找到
+    delete:
+      tags: [todos]
+      operationId: deleteTodo
+      summary: 删除待办
+      parameters:
+        - in: path
+          name: todoId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 删除成功
+        "404":
+          description: 未找到
+components:
+  schemas:
+    Todo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "todo-001"
+        title:
+          type: string
+          example: 学习 LangGraph
+        completed:
+          type: boolean
+          example: false
+      required: [id, title, completed]
+    TodoCreate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: 学习 pytest
+      required: [title]
+    TodoUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: 完成项目复盘
+        completed:
+          type: boolean
+          example: true

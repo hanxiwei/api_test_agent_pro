@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..chains.diagnosis_chain import diagnose
-from ..chains.generation_chain import generate_pytest_file
+from ..chains.generation_chain import generate_pytest_project
 from ..chains.repair_chain import repair_test_file
 from ..config import Settings
 from ..executor import run_pytest
@@ -99,7 +99,7 @@ class GraphNodes:
         endpoints = parse_openapi(state["openapi_path"])
         scenarios = build_scenarios(endpoints)
         output_dir = Path(state["output_dir"])
-        generated = [str(generate_pytest_file(self.settings, s, output_dir)) for s in scenarios]
+        generated = [str(path) for path in generate_pytest_project(self.settings, scenarios, output_dir)]
         return {
             "generated_files": generated,
             "tests_path": str(output_dir),

@@ -37,6 +37,8 @@ def build_chat_llm(model: ModelSettings) -> ChatOpenAI | None:
     base_url = _env("OPENAI_BASE_URL")
     if base_url:
         kwargs["base_url"] = base_url
+    kwargs["timeout"] = float(_env("LLM_TIMEOUT_SECONDS") or "20")
+    kwargs["max_retries"] = 1
 
     return ChatOpenAI(
         model=model.name,
