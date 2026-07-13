@@ -14,6 +14,63 @@
 
 ---
 
+## 这个项目到底干了什么
+
+你可以把它理解成一个“接口自动化工程生成器 + 失败自愈引擎”：
+
+1. **读懂接口文档**：把 OpenAPI/Swagger 文档解析成结构化的 Endpoint 列表（method/path/params/body/responses）
+2. **组织可执行的测试场景**：按资源聚合接口，把同一资源的 CRUD 组合成可跑通的 Scenario（避免孤立接口测试没有前置数据）
+3. **生成分层 pytest 工程**：自动落盘生成一套“像企业框架”的目录结构（`api/ + testcases/ + utils/ + data/ + config/`）
+4. **运行 pytest 并收集失败上下文**：统一捕获失败用例、失败文件路径、错误栈、stdout/stderr
+5. **失败分类与自愈闭环（可选）**：
+   - 如果是 `env_bug`（如服务没启动、端口不通）→ 不修代码，直接提示人工处理
+   - 如果是 `api_bug`（如接口返回与文档不一致）→ 不修测试代码，输出 handoff
+   - 如果是 `code_bug`（测试代码自身问题）→ 进入修复循环：短期记忆命中则直接复用，否则检索长期记忆 few-shot，再调用 LLM 重写失败测试文件，回归通过才写入长期记忆
+
+---
+
+## 流程图
+
+### 1) 生成链路（Generate）
+
+```mermaid
+flowchart TD
+  A[OpenAPI/Swagger 文档<br/>YAML/JSON] --> B[解析器 parser<br/>提取 Endpoint 列表]
+  B --> C[场景构建 scenario_builder<br/>Endpoint -> Scenario]
+  C --> D[生成链 generation_chain<br/>生成分层 pytest 工程]
+  D --> E[generated_tests/<br/>api testcases utils data config...]
+  E --> F[pytest 执行器 executor<br/>运行 pytest + json-report]
+  F --> G[运行报告 report<br/>.cache/latest_run_report.json]
+```
+
+### 2) 自愈闭环（Heal）
+
+```mermaid
+flowchart TD
+  A[pytest 执行器 executor] --> B{是否失败?}
+  B -- 否 --> C[结束：All Passed<br/>写入报告]
+
+  B -- 是 --> D[收集失败用例<br/>失败文件 + 错误栈]
+  D --> E[诊断 diagnosis_chain<br/>code_bug / api_bug / env_bug]
+  E --> F{是否 code_bug?}
+
+  F -- 否 --> G[人工介入 handoff<br/>写入报告并停止]
+
+  F -- 是 --> H[短期记忆 short_memory<br/>file::signature 命中?]
+  H -- 命中 --> I[直接复用修复结果<br/>0 次 LLM 调用]
+  H -- 未命中 --> J[长期记忆 long_memory/retriever<br/>检索 few-shot 示例]
+  J --> K[修复 repair_chain<br/>LLM 输出完整文件内容]
+
+  I --> L[应用修复：覆盖写回失败文件]
+  K --> L
+  L --> M[回归：重新运行 pytest]
+  M --> N{通过?}
+  N -- 否 --> O[最多重试 max_rounds<br/>否则停止并写报告]
+  N -- 是 --> P[写入长期记忆（validated-only）<br/>并写报告]
+```
+
+---
+
 ## Claude Code Skill 用法（推荐 ⭐）
 
 本项目已内置 Claude Code Skill，你可以在 Claude Code 中以自然语言驱动整个测试流程，无需手动记忆 CLI 命令。
@@ -45,13 +102,13 @@ Skill 激活后，Claude 会进入 API 测试专家模式，理解后续所有�
 
 直接用中文说出你想做的事，Claude 会自动匹配并激活 Skill：
 
-| 你说的话 | Claude 做的事 |
-|---|---|
-| "帮我从 petstore.yaml 生成测试" | 执行 `python cli.py generate -i data/petstore.yaml -o generated_tests` |
-| "运行测试并自动修复失败的用例" | 执行 `python cli.py heal -t generated_tests`，并解读修复结果 |
-| "看看上次测试报告" | 执行 `python cli.py report`，以表格/摘要呈现 |
-| "启动 Streamlit 看板" | 执行 `python -m streamlit run app.py`，并告知访问地址 |
-| "从 swagger.json 生成测试，用 deepseek-chat 模型" | 带参数执行，覆盖默认模型配置 |
+| 你说的话                                          | Claude 做的事                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------- |
+| "帮我从 petstore.yaml 生成测试"                   | 执行 `python cli.py generate -i data/petstore.yaml -o generated_tests` |
+| "运行测试并自动修复失败的用例"                    | 执行 `python cli.py heal -t generated_tests`，并解读修复结果           |
+| "看看上次测试报告"                                | 执行 `python cli.py report`，以表格/摘要呈现                           |
+| "启动 Streamlit 看板"                             | 执行 `python -m streamlit run app.py`，并告知访问地址                  |
+| "从 swagger.json 生成测试，用 deepseek-chat 模型" | 带参数执行，覆盖默认模型配置                                           |
 
 #### 方式三：完整流水线（端到端）
 
@@ -82,20 +139,20 @@ Claude 会**逐步执行并汇报每步结果**，你不需要操心命令细节
   4. 分析失败原因 → 1 个是 schema 不匹配（code_bug），1 个是网络超时（env_issue）
   5. 修复 code_bug → ✅ 重写后通过
   6. 回归验证 → ✅ 4 passed, 1 skipped（env_issue 跳过）
-  
+
   📊 最终：4/5 通过，1 个因环境问题跳过
   📄 修复了 1 个 bug：test_get_pet_by_id.py 中的响应断言字段名错误
 ```
 
 ### Skill 能调用的完整命令
 
-| 命令 | 说明 | 示例 |
-|---|---|---|
-| `python cli.py generate` | 从 OpenAPI 文档生成测试工程 | `python cli.py generate -i data/petstore.yaml -o generated_tests` |
-| `python cli.py heal` | 执行测试并对 code_bug 自动修复 | `python cli.py heal -t generated_tests -r 3` |
-| `python cli.py report` | 查看最近一次运行报告 | `python cli.py report` |
-| `python -m streamlit run app.py` | 启动可视化看板 | `python -m streamlit run app.py` |
-| `python mock_api_server.py` | 启动本地 mock 后端 | `python mock_api_server.py` |
+| 命令                             | 说明                           | 示例                                                              |
+| -------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `python cli.py generate`         | 从 OpenAPI 文档生成测试工程    | `python cli.py generate -i data/petstore.yaml -o generated_tests` |
+| `python cli.py heal`             | 执行测试并对 code_bug 自动修复 | `python cli.py heal -t generated_tests -r 3`                      |
+| `python cli.py report`           | 查看最近一次运行报告           | `python cli.py report`                                            |
+| `python -m streamlit run app.py` | 启动可视化看板                 | `python -m streamlit run app.py`                                  |
+| `python mock_api_server.py`      | 启动本地 mock 后端             | `python mock_api_server.py`                                       |
 
 ---
 
@@ -187,17 +244,17 @@ python cli.py heal -t generated_tests
 
 ### 核心源码
 
-| 路径 | 说明 |
-|---|---|
-| `lang_agent/` | 核心逻辑（解析、场景、生成链、自愈链、执行器、记忆、LangGraph 编排） |
-| `cli.py` | Click 命令行入口（generate / heal / report） |
-| `app.py` | Streamlit 看板入口（一键流水线 / 仅生成 / 仅自愈 / 最近报告） |
-| `mock_api_server.py` | 本地可复现 mock 后端（用于验收闭环） |
-| `config.yaml` | 默认配置（模型、base_url、修复轮数、记忆开关） |
-| `config.long_memory.yaml` | 启用长期记忆的配置参考 |
-| `data/` | 示例 OpenAPI 文档（默认 `petstore.yaml`） |
-| `tests/` | 本项目自身的单元测试（不是生成的接口测试） |
-| `.claude/skills/api-test-agent/SKILL.md` | Claude Code Skill 定义文件 |
+| 路径                                     | 说明                                                                 |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `lang_agent/`                            | 核心逻辑（解析、场景、生成链、自愈链、执行器、记忆、LangGraph 编排） |
+| `cli.py`                                 | Click 命令行入口（generate / heal / report）                         |
+| `app.py`                                 | Streamlit 看板入口（一键流水线 / 仅生成 / 仅自愈 / 最近报告）        |
+| `mock_api_server.py`                     | 本地可复现 mock 后端（用于验收闭环）                                 |
+| `config.yaml`                            | 默认配置（模型、base_url、修复轮数、记忆开关）                       |
+| `config.long_memory.yaml`                | 启用长期记忆的配置参考                                               |
+| `data/`                                  | 示例 OpenAPI 文档（默认 `petstore.yaml`）                            |
+| `tests/`                                 | 本项目自身的单元测试（不是生成的接口测试）                           |
+| `.claude/skills/api-test-agent/SKILL.md` | Claude Code Skill 定义文件                                           |
 
 ### 自动生成产物
 
@@ -256,16 +313,16 @@ python -m streamlit run app.py
 
 `config.yaml` 中的关键配置项：
 
-| 配置项 | 说明 | 默认值 |
-|---|---|---|
-| `openapi_path` | 默认 OpenAPI 文档路径 | `data/petstore.yaml` |
-| `base_url` | API 服务地址 | `http://localhost:8000` |
-| `output_dir` | 测试工程输出目录 | `generated_tests` |
-| `model.provider` | LLM 提供商 | `openai` |
-| `model.name` | 模型名称 | `deepseek-v4-pro` |
-| `model.temperature` | 生成温度 | `0` |
-| `heal.max_rounds` | 最大修复轮数 | `3` |
-| `memory.enable_long_memory` | 是否启用 ChromaDB 长期记忆 | `false` |
+| 配置项                      | 说明                       | 默认值                  |
+| --------------------------- | -------------------------- | ----------------------- |
+| `openapi_path`              | 默认 OpenAPI 文档路径      | `data/petstore.yaml`    |
+| `base_url`                  | API 服务地址               | `http://localhost:8000` |
+| `output_dir`                | 测试工程输出目录           | `generated_tests`       |
+| `model.provider`            | LLM 提供商                 | `openai`                |
+| `model.name`                | 模型名称                   | `deepseek-v4-pro`       |
+| `model.temperature`         | 生成温度                   | `0`                     |
+| `heal.max_rounds`           | 最大修复轮数               | `3`                     |
+| `memory.enable_long_memory` | 是否启用 ChromaDB 长期记忆 | `false`                 |
 
 所有配置项都可以通过 CLI 参数覆盖。
 
