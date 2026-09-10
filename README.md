@@ -1,35 +1,119 @@
 # API Test Agent Pro
 
-一个面向测开 / SDET 的工具：从 OpenAPI/Swagger 文档自动生成分层 pytest 接口自动化工程，执行失败后进入自动自愈闭环（最多 3 轮、仅对 code_bug 修复）。支持短期记忆（同错复用、0 LLM 调用）与可选的长期记忆（ChromaDB，validated-only）。
+<div align="center">
 
-## 能力概览
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![LangGraph](https://img.shields.io/badge/Orchestrator-LangGraph-00C2CB)
+![pytest](https://img.shields.io/badge/Engine-pytest-0A9EDC?logo=pytest&logoColor=white)
+![OpenAPI](https://img.shields.io/badge/Input-OpenAPI%20%2F%20Swagger-85EA2D?logo=swagger&logoColor=black)
+![Build](https://img.shields.io/badge/build-13%20passed-success)
+![GitHub last commit](https://img.shields.io/github/last-commit/hanxiwei/api_test_agent_pro)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-- OpenAPI/Swagger 解析：从 YAML/JSON 提取接口信息，构建 Endpoint 列表
-- 场景构建：按资源聚合接口，生成 CRUD 场景（Scenario）
-- 分层工程生成：输出 `api/ testcases/ utils/ data/ config/ reports/ + conftest.py + pytest.ini`
-- pytest 执行与失败收集：封装执行器并解析 `pytest-json-report`
-- 自愈闭环：失败分类 → 短期/长期记忆检索 → LLM 重写失败测试文件 → 回归验证
-- 入口与展示：Click CLI + Streamlit 看板（一键流水线）+ **Claude Code Skill 集成**
-- 可复现实验环境：内置 `mock_api_server.py` + `data/petstore.yaml`
+**从一份 OpenAPI/Swagger 文档 → 自动生成分层 pytest 工程 → 执行失败 → 分类 → 自动自愈，端到端的接口自动化 + LLM 自修复 Agent。**
 
----
-
-## 这个项目到底干了什么
-
-你可以把它理解成一个“接口自动化工程生成器 + 失败自愈引擎”：
-
-1. **读懂接口文档**：把 OpenAPI/Swagger 文档解析成结构化的 Endpoint 列表（method/path/params/body/responses）
-2. **组织可执行的测试场景**：按资源聚合接口，把同一资源的 CRUD 组合成可跑通的 Scenario（避免孤立接口测试没有前置数据）
-3. **生成分层 pytest 工程**：自动落盘生成一套“像企业框架”的目录结构（`api/ + testcases/ + utils/ + data/ + config/`）
-4. **运行 pytest 并收集失败上下文**：统一捕获失败用例、失败文件路径、错误栈、stdout/stderr
-5. **失败分类与自愈闭环（可选）**：
-   - 如果是 `env_bug`（如服务没启动、端口不通）→ 不修代码，直接提示人工处理
-   - 如果是 `api_bug`（如接口返回与文档不一致）→ 不修测试代码，输出 handoff
-   - 如果是 `code_bug`（测试代码自身问题）→ 进入修复循环：短期记忆命中则直接复用，否则检索长期记忆 few-shot，再调用 LLM 重写失败测试文件，回归通过才写入长期记忆
+</div>
 
 ---
 
-## 流程图
+## 目录（Table of Contents）
+
+- [项目简介](#项目简介)
+- [项目背景 / 解决什么问题](#项目背景--解决什么问题)
+- [功能特性](#功能特性)
+- [架构与流程图](#架构与流程图)
+- [快速开始](#快速开始)
+- [使用示例](#使用示例)
+- [配置说明](#配置说明)
+- [项目结构](#项目结构)
+- [技术栈](#技术栈)
+- [测试](#测试)
+- [代码健壮性（Robustness）](#代码健壮性robustness)
+- [路线图 Roadmap](#路线图-roadmap)
+- [常见问题 FAQ](#常见问题-faq)
+
+---
+
+## 项目简介
+
+API Test Agent Pro 是一个面向 **SDET / 测开工程师 / AI Infra 开发者** 的工具：你只需丢一份 `openapi.yaml / swagger.json`，它会自动：
+
+1. 解析接口定义 → 构建 CRUD 场景
+2. 生成一套"企业级分层"的 `pytest` 工程（`api / testcases / utils / data / config / reports`）
+3. 跑 pytest 并采集失败上下文
+4. 对失败做三类诊断（`code_bug / api_bug / env_bug`）并给出置信度、原因、可操作提示
+5. **仅对高置信 code_bug** 进入自动修复：短期记忆（同错 0 次 LLM）→ 长期记忆（ChromaDB few-shot）→ LLM 重写失败文件 → 回归验证，最多 3 轮
+6. 回归通过才写入长期记忆（validated-only），并为 CLI / Streamlit / Claude Code Skill 暴露同一份结构化报告。
+
+整个自愈内核使用 **LangGraph 状态机** 编排，支持门控、熔断、handoff，"不确定就不乱修"。
+
+---
+
+## 项目背景 / 解决什么问题
+
+传统接口自动化有 4 个痛点，这个项目就是为了解决它们：
+
+| 痛点                                                      | 本项目的解法                                                                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **写用例太慢**：新接口一出来，testcase 一个个写要一周     | `OpenAPI → Scenario → pytest` 一键生成，按资源聚合 CRUD 场景，秒级出工程                                                          |
+| **维护成本高**：接口一迭代，用例批量失败，人工挨个修      | **LLM 自愈闭环**：code_bug 自动修，最多 3 轮 + 记忆沉淀，下次同错直接命中                                                         |
+| **乱修更可怕**：LLM 改错比没修还惨，断言被削弱还看不出来  | **三层保护**：诊断置信度门控（< 0.7 不进修复）+ 修复 AST 门控（断言少了/没测试函数/语法错直接拦截）+ 原子写（不会写坏文件）       |
+| **报错看不懂**：堆栈 + 中文夹杂，新人根本不知道下一步干啥 | **统一异常体系 + 可操作 user_hint**：解析器、执行器、LLM、门控都抛结构化错误，runner 兜底写 `handoff_report`，CLI/UI 直接念给人听 |
+
+面试叙事：它不是"让 GPT 改代码的玩具脚本"，而是一套"生成 + 执行 + 诊断 + 门控 + 记忆 + 展示"都有明确边界的 Agent Harness——**边界就是：能修的修，修不了的交给人，绝对不让系统越界**。
+
+---
+
+## 功能特性
+
+- ✅ **OpenAPI/Swagger 解析**：YAML/JSON 自动提取 method/path/params/body/responses，自动构建 Endpoint 列表
+- ✅ **智能场景构建**：按资源聚合 CRUD 接口（比如 `pets` 资源 = create → get → list → update → delete），避免孤立接口无前置数据
+- ✅ **分层 pytest 工程生成**：输出 `api/ testcases/ utils/ data/ config/ reports/ conftest.py pytest.ini`，目录结构跟企业自动化框架一模一样
+- ✅ **结构化失败采集**：`pytest-json-report` → 失败用例、失败文件路径、行号、堆栈、stdout/stderr 全部结构化
+- ✅ **三类失败诊断**：`code_bug`（用例本身问题）/ `api_bug`（接口返回和文档不一致）/ `env_bug`（服务没起、网络、鉴权）
+- ✅ **诊断置信度 + 可操作提示**：每个诊断都带 `confidence / reasons / actionable_hint`，低置信直接 handoff
+- ✅ **短期记忆 Short Memory**：同一文件 + 同一错误签名 → 直接复用上次修复，**0 次 LLM 调用**
+- ✅ **长期记忆 Long Memory**：ChromaDB 向量检索 validated-only 的修复案例作为 few-shot，越修越聪明
+- ✅ **修复门控 AST Guardrails**：断言数量下降 / 缺 `def test_` 函数 / 语法错误 → **拒绝落盘**
+- ✅ **原子写防半写**：生成和修复的文件落盘全部 `tempfile + fsync + os.replace`，中途 Ctrl+C 不会毁文件
+- ✅ **统一异常 + Handoff 报告**：所有关键错误都转成结构化 `handoff_report`，异常时也写 `latest_run_report.json`
+- ✅ **三种入口**：Click CLI / Streamlit 看板 / **Claude Code Skill**（推荐，自然语言直接驱动）
+- ✅ **可复现实验环境**：内置 `mock_api_server.py` + `data/petstore.yaml`，clone 下来即能演示
+
+---
+
+## 架构与流程图
+
+### 整体架构分层
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                    入口层 Entry Layer                          │
+│   CLI (cli.py)   Streamlit (app.py)   Claude Code Skill       │
+└───────────────────────────┬───────────────────────────────────┘
+                            │ invoke
+                            ▼
+┌───────────────────────────────────────────────────────────────┐
+│                  Agent Harness（LangGraph）                    │
+│  runner.py  ─▶  nodes.py   ─▶   router.py  ─▶  state.py       │
+│  编排 & 异常兜底    原子节点执行      分支路由       共享状态    │
+└───────────────┬─────────────────────────┬─────────────────────┘
+                │ 解析/生成/执行/诊断/修复    │ 记忆检索
+                ▼                         ▼
+┌─────────────────────────────┐  ┌──────────────────────────────┐
+│        Chains 能力链         │  │      Memory Layer 记忆层      │
+│  parser / generation_chain   │  │  short_memory（错误签名 KV）  │
+│  diagnosis_chain / repair    │  │  long_memory（ChromaDB 向量） │
+│  executor / signatures       │  │  retriever（few-shot 召回）   │
+└─────────────────────────────┘  └──────────────────────────────┘
+                │
+                ▼
+┌───────────────────────────────────────────────────────────────┐
+│                    产物 & 报告 Artifacts                        │
+│  generated_tests/（分层 pytest 工程）                          │
+│  .cache/latest_run_report.json  handoff_report  repair_history │
+└───────────────────────────────────────────────────────────────┘
+```
 
 ### 1) 生成链路（Generate）
 
@@ -37,7 +121,7 @@
 flowchart TD
   A[OpenAPI/Swagger 文档<br/>YAML/JSON] --> B[解析器 parser<br/>提取 Endpoint 列表]
   B --> C[场景构建 scenario_builder<br/>Endpoint -> Scenario]
-  C --> D[生成链 generation_chain<br/>生成分层 pytest 工程]
+  C --> D[生成链 generation_chain<br/>原子写生成分层 pytest 工程]
   D --> E[generated_tests/<br/>api testcases utils data config...]
   E --> F[pytest 执行器 executor<br/>运行 pytest + json-report]
   F --> G[运行报告 report<br/>.cache/latest_run_report.json]
@@ -47,123 +131,35 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  A[pytest 执行器 executor] --> B{是否失败?}
+  A[pytest 执行器 executor] --> B{pytest 失败?}
   B -- 否 --> C[结束：All Passed<br/>写入报告]
-
-  B -- 是 --> D[收集失败用例<br/>失败文件 + 错误栈]
-  D --> E[诊断 diagnosis_chain<br/>code_bug / api_bug / env_bug]
-  E --> F{是否 code_bug?}
-
-  F -- 否 --> G[人工介入 handoff<br/>写入报告并停止]
-
-  F -- 是 --> H[短期记忆 short_memory<br/>file::signature 命中?]
-  H -- 命中 --> I[直接复用修复结果<br/>0 次 LLM 调用]
-  H -- 未命中 --> J[长期记忆 long_memory/retriever<br/>检索 few-shot 示例]
-  J --> K[修复 repair_chain<br/>LLM 输出完整文件内容]
-
-  I --> L[应用修复：覆盖写回失败文件]
+  B -- 是 --> D[失败采集<br/>失败文件 + 堆栈 + stdout/stderr]
+  D --> E[diagnosis_chain<br/>code_bug / api_bug / env_bug<br/>+confidence+reasons+hint]
+  E --> F{code_bug 且 confidence>=0.7?}
+  F -- 否 --> G[Handoff 人工介入<br/>写报告并停止]
+  F -- 是 --> H[Short Memory<br/>file::signature 命中?]
+  H -- 命中 --> I[直接复用修复<br/>0 LLM 调用]
+  H -- 未命中 --> J[Long Memory Retriever<br/>ChromaDB few-shot 检索]
+  J --> K[repair_chain + AST Gate<br/>断言下降/语法错/缺 test_ 拦截]
+  I --> L[apply_fix_node<br/>atomic_write_text 覆盖]
   K --> L
-  L --> M[回归：重新运行 pytest]
+  L --> M[retest：重新 pytest]
   M --> N{通过?}
-  N -- 否 --> O[最多重试 max_rounds<br/>否则停止并写报告]
-  N -- 是 --> P[写入长期记忆（validated-only）<br/>并写报告]
+  N -- 否 --> O{repair_round < max_rounds?}
+  O -- 是 --> D
+  O -- 否 --> P[Handoff：修多轮仍不过<br/>写报告停止]
+  N -- 是 --> Q[validated-only 写入长期记忆<br/>写 report / repair_history]
 ```
 
 ---
 
-## Claude Code Skill 用法（推荐 ⭐）
+## 快速开始
 
-本项目已内置 Claude Code Skill，你可以在 Claude Code 中以自然语言驱动整个测试流程，无需手动记忆 CLI 命令。
+### 0) 环境要求
 
-### 什么是 Claude Code Skill？
-
-Skill 是 Claude Code 的扩展机制。本项目将 CLI 能力封装为 Skill 后，Claude 能自动完成以下工作：
-
-- ✅ 检查环境是否就绪（依赖、.env、mock 服务）
-- ✅ 根据你的自然语言意图，选择合适的命令和参数
-- ✅ 解读运行结果和修复报告，用中文总结给你
-- ✅ 遇到错误时自动排查（如端口占用、API key 未配置等）
-
-### 如何激活
-
-Skill 文件位于 `.claude/skills/api-test-agent/SKILL.md`，打开本项目后 Claude Code 会自动发现。你有 **三种方式** 触发：
-
-#### 方式一：斜杠命令
-
-在 Claude Code 对话中直接输入：
-
-```
-/api-test-agent
-```
-
-Skill 激活后，Claude 会进入 API 测试专家模式，理解后续所有测试相关的指令。
-
-#### 方式二：自然语言描述（推荐）
-
-直接用中文说出你想做的事，Claude 会自动匹配并激活 Skill：
-
-| 你说的话                                          | Claude 做的事                                                          |
-| ------------------------------------------------- | ---------------------------------------------------------------------- |
-| "帮我从 petstore.yaml 生成测试"                   | 执行 `python cli.py generate -i data/petstore.yaml -o generated_tests` |
-| "运行测试并自动修复失败的用例"                    | 执行 `python cli.py heal -t generated_tests`，并解读修复结果           |
-| "看看上次测试报告"                                | 执行 `python cli.py report`，以表格/摘要呈现                           |
-| "启动 Streamlit 看板"                             | 执行 `python -m streamlit run app.py`，并告知访问地址                  |
-| "从 swagger.json 生成测试，用 deepseek-chat 模型" | 带参数执行，覆盖默认模型配置                                           |
-
-#### 方式三：完整流水线（端到端）
-
-一条指令走完整个流程：
-
-```
-/api-test-agent
-
-帮我执行完整流水线：
-1. 用 data/petstore.yaml 生成测试到 generated_tests/
-2. 先确认 mock 服务在 localhost:8000 是否活着，没活就先启动
-3. 执行 heal：跑 pytest，失败就自动修复
-4. 最后给我一份人类可读的修复报告
-```
-
-Claude 会**逐步执行并汇报每步结果**，你不需要操心命令细节。
-
-### 典型对话示例
-
-```
-👤 用户：帮我看看 petstore API 的测试覆盖率怎么样
-
-🤖 Claude：
-  好的，我来走完整流水线：
-  1. 先检查 mock 服务 → ✅ localhost:8000 正常
-  2. 生成测试工程 → ✅ 生成了 8 个测试文件
-  3. 执行 pytest → ❌ 3 passed, 2 failed
-  4. 分析失败原因 → 1 个是 schema 不匹配（code_bug），1 个是网络超时（env_issue）
-  5. 修复 code_bug → ✅ 重写后通过
-  6. 回归验证 → ✅ 4 passed, 1 skipped（env_issue 跳过）
-
-  📊 最终：4/5 通过，1 个因环境问题跳过
-  📄 修复了 1 个 bug：test_get_pet_by_id.py 中的响应断言字段名错误
-```
-
-### Skill 能调用的完整命令
-
-| 命令                             | 说明                           | 示例                                                              |
-| -------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
-| `python cli.py generate`         | 从 OpenAPI 文档生成测试工程    | `python cli.py generate -i data/petstore.yaml -o generated_tests` |
-| `python cli.py heal`             | 执行测试并对 code_bug 自动修复 | `python cli.py heal -t generated_tests -r 3`                      |
-| `python cli.py report`           | 查看最近一次运行报告           | `python cli.py report`                                            |
-| `python -m streamlit run app.py` | 启动可视化看板                 | `python -m streamlit run app.py`                                  |
-| `python mock_api_server.py`      | 启动本地 mock 后端             | `python mock_api_server.py`                                       |
-
----
-
-## 快速开始（手动 CLI 模式）
-
-如果你更习惯直接在终端操作，以下是手动流程。
-
-### 0) 准备环境
-
-- Python：3.10+（推荐）
+- Python **3.10** 及以上
 - Windows / macOS / Linux 均可
+- （可选）一个 OpenAI 兼容协议的 API Key（推荐 DeepSeek）
 
 ### 1) 安装依赖
 
@@ -173,13 +169,13 @@ python -m pip install -r requirements.txt
 
 ### 2) 启动本地 mock 服务（推荐先做）
 
-本项目默认用 `data/petstore.yaml` 演示，测试请求的 `base_url` 期望为 `http://localhost:8000`。先把 mock 启动起来，后面所有命令都能稳定验收：
+本项目用 `data/petstore.yaml` 演示，`base_url` 默认期望 `http://localhost:8000`。先把 mock 起起来：
 
 ```bash
 python mock_api_server.py
 ```
 
-验证 mock 正常：
+另开一个终端验证 mock 正常：
 
 ```bash
 python -c "import requests; print(requests.get('http://127.0.0.1:8000/pets').status_code)"
@@ -187,287 +183,360 @@ python -c "import requests; print(requests.get('http://127.0.0.1:8000/pets').sta
 
 ### 3) 配置环境变量（可选但推荐）
 
-复制 `.env.example` 为 `.env`。
-
-如果你使用 `DeepSeek API`（OpenAI 兼容协议），推荐直接这样配置：
+复制 `.env.example` 为 `.env`：
 
 ```env
-OPENAI_API_KEY=your_deepseek_api_key
+# DeepSeek（OpenAI 兼容协议）
+OPENAI_API_KEY=sk-xxxx
 OPENAI_BASE_URL=https://api.deepseek.com
+
+# 可选：启用向量长期记忆时再配
+# EMBEDDING_API_KEY=...
+# EMBEDDING_BASE_URL=...
+# EMBEDDING_MODEL=...
 ```
 
-默认模型已配置为 `deepseek-v4-pro`。
+> 💡 不配置 LLM 也可以：**生成链路不依赖 LLM**（纯规则），只有 heal 里"没命中 short_memory"时才需要 LLM；此时会统一抛 `LLMUnavailableError` 并写 handoff 报告。
 
-说明（和当前实现保持一致）：
-
-- 本项目的聊天模型通过 `langchain_openai.ChatOpenAI` 走 OpenAI 兼容协议接入 `DeepSeek`
-- 如果你只配置 `DeepSeek`，长期记忆中的向量检索会自动降级为 no-op，不影响生成和修复主流程（仍可写入/按元数据兜底检索）
-- 如果你还想启用长期记忆检索，可额外配置一个支持 embedding 的服务：`EMBEDDING_API_KEY`、`EMBEDDING_BASE_URL`、`EMBEDDING_MODEL`
-
-### 4) 生成分层测试工程
+### 4) 一键生成 + 自愈
 
 ```bash
+# 先生成分层 pytest 工程
 python cli.py generate -i data/petstore.yaml -o generated_tests
-```
 
-生成完成后，你会得到类似结构（示意）：
-
-```text
-generated_tests/
-├── api/
-├── config/
-├── data/
-├── reports/
-├── testcases/
-├── utils/
-├── conftest.py
-└── pytest.ini
-```
-
-### 5) 执行 pytest（只执行，不修复）
-
-```bash
-python -m pytest generated_tests -q
-```
-
-### 6) 执行并自动修复（最多 3 轮）
-
-当且仅当 pytest 失败且被识别为 `code_bug` 时，才会进入修复循环：
-
-```bash
+# 再执行 + 失败自动自愈
 python cli.py heal -t generated_tests
 ```
 
----
-
-## 项目结构
-
-### 核心源码
-
-| 路径                                     | 说明                                                                 |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| `lang_agent/`                            | 核心逻辑（解析、场景、生成链、自愈链、执行器、记忆、LangGraph 编排） |
-| `cli.py`                                 | Click 命令行入口（generate / heal / report）                         |
-| `app.py`                                 | Streamlit 看板入口（一键流水线 / 仅生成 / 仅自愈 / 最近报告）        |
-| `mock_api_server.py`                     | 本地可复现 mock 后端（用于验收闭环）                                 |
-| `config.yaml`                            | 默认配置（模型、base_url、修复轮数、记忆开关）                       |
-| `config.long_memory.yaml`                | 启用长期记忆的配置参考                                               |
-| `data/`                                  | 示例 OpenAPI 文档（默认 `petstore.yaml`）                            |
-| `tests/`                                 | 本项目自身的单元测试（不是生成的接口测试）                           |
-| `.claude/skills/api-test-agent/SKILL.md` | Claude Code Skill 定义文件                                           |
-
-### 自动生成产物
-
-- `generated_tests/`：自动生成的分层 pytest 工程（建议不提交 Git，随时可删后重生成）
-- `.cache/`：运行报告与短期记忆缓存（可删）
-- `.chroma_acceptance/`：长期记忆验收用 Chroma 数据（可删）
-
----
-
-## CLI 用法（参考）
-
-### 生成
-
-```bash
-# 基础用法
-python cli.py generate -i data/petstore.yaml -o generated_tests
-
-# 指定 base_url 和模型
-python cli.py generate -i data/petstore.yaml -o generated_tests --base-url https://api.example.com --model-name deepseek-chat
-```
-
-### 自愈
-
-```bash
-# 对已有测试工程执行自愈
-python cli.py heal -t generated_tests
-
-# 先生成再自愈（一条命令）
-python cli.py heal -i data/petstore.yaml -t generated_tests
-
-# 指定最大修复轮数和启用长期记忆
-python cli.py heal -t generated_tests -r 5 --enable-long-memory
-```
-
-### 查看最近一次报告
+### 5) 查看最近报告
 
 ```bash
 python cli.py report
 ```
 
+报告真实文件就在 `.cache/latest_run_report.json`，Streamlit 和 Skill 都是读这份。
+
 ---
 
-## Streamlit 看板
+## 使用示例
+
+### 示例 1：手动 CLI 端到端
+
+```bash
+# 1) 生成
+python cli.py generate -i data/petstore.yaml -o generated_tests --base-url http://localhost:8000
+
+# 生成的分层结构
+ls generated_tests
+# api/  config/  data/  reports/  testcases/  utils/  conftest.py  pytest.ini
+
+# 2) 纯跑一次 pytest（不自愈）
+python -m pytest generated_tests -q
+
+# 3) 失败就自动修（最多 5 轮，开长期记忆）
+python cli.py heal -t generated_tests -r 5 --enable-long-memory
+```
+
+### 示例 2：故意触发异常 → 看 handoff_report
+
+```bash
+# 输入文件不存在
+python cli.py generate -i data/not_exists.yaml -o generated_tests 2>&1 || true
+
+# 查看结构化报告
+python -c "import json; print(json.dumps(__import__('lang_agent.report', fromlist=['load_run_report']).load_run_report(), indent=2, ensure_ascii=False))"
+```
+
+期望字段：
+
+```json
+{
+  "ok": false,
+  "stopped_reason": "stopped_on_env_bug",
+  "handoff_report": {
+    "category": "env_bug",
+    "error_type": "OpenAPIParserError",
+    "reason": "请检查输入文件是否存在...",
+    "details": { "path": "..." }
+  }
+}
+```
+
+### 示例 3：Streamlit 可视化看板
 
 ```bash
 python -m streamlit run app.py
 ```
 
-打开页面后建议用：
+进页面后走 **「一键流水线」**：选 `data/petstore.yaml` → 点开始 → 看自愈过程、修复轮数、handoff 信息全部可视化。
 
-- 一键流水线：OpenAPI → Generate → pytest →（失败则 heal）→ 报告
+### 示例 4：Claude Code Skill（推荐 ⭐）
+
+在 Claude Code 里直接说：
+
+> 帮我用 `data/petstore.yaml` 走完整流水线：先启动 mock 服务，再生成测试到 `generated_tests/`，如果失败就自动修，最后给我一份中文报告。
+
+Skill 路径：`.claude/skills/api-test-agent/SKILL.md`，打开项目就会自动被 Claude Code 发现。
 
 ---
 
 ## 配置说明
 
-`config.yaml` 中的关键配置项：
+`config.yaml` 默认配置（所有字段都能被 CLI 参数覆盖）：
 
-| 配置项                      | 说明                       | 默认值                  |
-| --------------------------- | -------------------------- | ----------------------- |
-| `openapi_path`              | 默认 OpenAPI 文档路径      | `data/petstore.yaml`    |
-| `base_url`                  | API 服务地址               | `http://localhost:8000` |
-| `output_dir`                | 测试工程输出目录           | `generated_tests`       |
-| `model.provider`            | LLM 提供商                 | `openai`                |
-| `model.name`                | 模型名称                   | `deepseek-v4-pro`       |
-| `model.temperature`         | 生成温度                   | `0`                     |
-| `heal.max_rounds`           | 最大修复轮数               | `3`                     |
-| `memory.enable_long_memory` | 是否启用 ChromaDB 长期记忆 | `false`                 |
+| 配置项                      | 说明                                 | 默认值                          |
+| --------------------------- | ------------------------------------ | ------------------------------- |
+| `openapi_path`              | 默认 OpenAPI 文档路径                | `data/petstore.yaml`            |
+| `base_url`                  | 被测 API 服务地址                    | `http://localhost:8000`         |
+| `output_dir`                | 生成的 pytest 工程目录               | `generated_tests`               |
+| `model.provider`            | LLM 提供商（目前只实现 openai 兼容） | `openai`                        |
+| `model.name`                | 聊天模型名                           | `deepseek-v4-pro`               |
+| `model.temperature`         | 生成温度（修复建议保持 0）           | `0`                             |
+| `heal.max_rounds`           | 单失败最大自愈轮数（熔断）           | `3`                             |
+| `memory.enable_long_memory` | 是否启用 ChromaDB 向量长期记忆       | `false`                         |
+| `memory.long_memory_path`   | 长期记忆本地存储路径                 | `.chroma_acceptance`            |
+| `memory.short_memory_path`  | 短期记忆 JSON 路径                   | `.cache/short_memory.json`      |
+| `report.path`               | 运行报告落盘路径                     | `.cache/latest_run_report.json` |
 
-所有配置项都可以通过 CLI 参数覆盖。
+如需启用长期记忆，可直接参考 `config.long_memory.yaml`（它提供了 embedding 相关的完整配置示例）。
 
 ---
 
-## 代码健壮性与可操作错误（Robustness）
+## 项目结构
 
-为了解决 MVP 阶段常见的「修到一半写坏文件 / 诊断不确定仍乱修 / 报错只打堆栈」三类工程化问题，本项目默认开启下面三层保护，任何一条都能作为面试里「从 MVP 到可交付产品」的证据。
+```text
+api_test_agent_02/
+├── lang_agent/                          # ⭐ 核心内核
+│   ├── chains/                          # 能力链（Parser/生成/诊断/修复/执行）
+│   │   ├── generation_chain.py          #   分层工程生成 + 原子写
+│   │   ├── diagnosis_chain.py           #   三类诊断 + confidence / reasons / hint
+│   │   ├── repair_chain.py              #   LLM 修复 + AST 门控 + apply_repair_to_file
+│   │   ├── prompts.py                   #   所有 prompt 模板
+│   │   └── llm_factory.py               #   模型工厂（ChatOpenAI 兼容）
+│   ├── graph/                           # LangGraph 编排
+│   │   ├── runner.py                    #   编译图 + run_generate / run_heal + 异常兜底
+│   │   ├── nodes.py                     #   parse / run_tests / classify / build_sig / retest ...
+│   │   ├── router.py                    #   分支路由 + 低置信度 handoff 门控
+│   │   └── state.py                     #   AgentState（含 diagnosis_* 字段）
+│   ├── memory/                          # 双层记忆
+│   │   ├── short_memory.py              #   错误签名 KV
+│   │   ├── long_memory.py               #   ChromaDB（validated-only 写）
+│   │   └── retriever.py                 #   few-shot 召回
+│   ├── parser.py                        # OpenAPI 解析 + OpenAPIParserError
+│   ├── executor.py                      # pytest 子进程 + TestRunnerError
+│   ├── scenario_builder.py              # Endpoint → Scenario
+│   ├── signatures.py                    # 错误签名 hash
+│   ├── report.py                        # RunReport / HealReport / save / load
+│   ├── config.py                        # Pydantic 配置加载
+│   └── utils.py                         # ⭐ atomic_write_text + 统一异常家族
+├── tests/                               # 本项目单元测试（不是生成的接口测试）
+│   ├── test_parser.py
+│   ├── test_report.py
+│   ├── test_router.py                   # 含置信度门控用例
+│   ├── test_signatures.py
+│   ├── test_long_memory.py
+│   └── test_utils_robustness.py         # ⭐ 原子写 / handoff_report 用例
+├── data/                                # 示例 OpenAPI 文档
+│   ├── petstore.yaml
+│   └── todo_demo.yaml
+├── docs/
+│   └── 21天复写计划-API-Test-Agent.md   # 面试 21 天学习 & 复写路线
+├── .claude/skills/api-test-agent/       # Claude Code Skill 定义
+├── cli.py                               # Click CLI：generate / heal / report
+├── app.py                               # Streamlit 可视化看板
+├── mock_api_server.py                   # 本地可复现 mock 后端
+├── config.yaml                          # 默认配置
+├── config.long_memory.yaml              # 长期记忆配置参考
+├── requirements.txt
+├── pytest.ini
+├── .env.example
+└── README.md
+```
 
-### 1. 统一原子写：中途 Ctrl+C 或磁盘异常不会写坏文件
+### 生成产物目录（可删、随时能重新生成）
 
-所有**生成工程**（`api/ testcases/ utils/ data/ config/ ...`）与**修复回写**的文件落盘全部走 `atomic_write_text()`：
+- `generated_tests/`：对外产出的分层 pytest 工程
+- `.cache/`：运行报告、短期记忆缓存
+- `.chroma_acceptance/`：长期记忆向量库（启用长期记忆时生成）
 
-- 先写入同目录的临时文件（保证目录存在可写、UTF-8 编码、换行符稳定）
-- 对临时文件 `flush()` + `os.fsync()`，强制落盘到磁盘
-- 最后调用 `os.replace()` 做原子重命名，目标文件要么完整旧版、要么完整新版，**绝不会出现半截内容**
-- 父目录不存在会自动 `mkdir(parents=True, exist_ok=True)`
+---
 
-对应实现与接入点：
+## 技术栈
 
-- 工具：`lang_agent/utils.py` → `atomic_write_text()`
-- 生成链：`lang_agent/chains/generation_chain.py` 的 `_write_file()` 全部走原子写
-- 修复链：`lang_agent/chains/repair_chain.py` 的 `apply_repair_to_file()` 用原子写覆盖回目标文件
-- 节点层：`lang_agent/graph/nodes.py` 的 `apply_fix_node` 统一入口
+| 分类         | 技术 / 库                             | 作用                                         |
+| ------------ | ------------------------------------- | -------------------------------------------- |
+| Agent 编排   | **LangGraph**                         | 自愈状态机、条件路由、轮数熔断、handoff      |
+| Prompt / LLM | **LangChain + langchain-openai**      | 诊断链、修复链、ChatOpenAI 兼容入口          |
+| 长期记忆     | **ChromaDB**                          | validated-only 向量库 + few-shot 召回        |
+| 解析         | **Prance**                            | OpenAPI/Swagger 校验与解析（支持 YAML/JSON） |
+| 执行引擎     | **pytest + pytest-json-report**       | 用例执行 + 结构化失败采集                    |
+| 重试兜底     | **tenacity**                          | LLM 调用、网络不稳定重试装饰器               |
+| CLI          | **Click**                             | generate / heal / report 子命令              |
+| 可视化       | **Streamlit**                         | 一键流水线看板、报告展示                     |
+| 配置         | **PyYAML + python-dotenv + Pydantic** | `config.yaml` + `.env` 加载                  |
+| HTTP         | **requests**                          | mock 验证与生成的测试接口层                  |
+| Agent 交互   | **Claude Code Skill**                 | 自然语言驱动整个流水线                       |
 
-单元测试（面试可直接甩）：`tests/test_utils_robustness.py` 中
-- `test_atomic_write_text_overwrites_correctly`：正常覆盖写一致性
-- `test_atomic_write_text_failure_preserves_original`：写过程模拟磁盘异常 → 原文件**完整保留旧内容**
-- `test_atomic_write_text_handles_missing_parent`：父目录不存在也能原子落盘
+---
 
-### 2. 诊断置信度 + 低置信度不进入修复（防误修）
+## 测试
 
-失败分类不仅返回 `code_bug / api_bug / env_bug`，现在诊断链还会强制输出结构化字段：
+这里的 `tests/` 是 **项目本身的单元/回归测试**（测 parser、router、report、long_memory、signatures、robustness 等），**不是**对外生成的接口用例。
+
+### 运行
+
+```bash
+pytest tests -q
+```
+
+当前基线：`13 passed`（2026-09-10，commit `f3a5b42`）。
+
+### 测试覆盖的关键能力
+
+| 模块      | 用例文件                         | 覆盖点                                                                                      |
+| --------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
+| 解析器    | `tests/test_parser.py`           | 读取 YAML/JSON、Endpoint 提取                                                               |
+| 报告      | `tests/test_report.py`           | RunReport save/load、序列化                                                                 |
+| 路由      | `tests/test_router.py`           | 分类、置信度 handoff、重试与 max_rounds 熔断                                                |
+| 签名      | `tests/test_signatures.py`       | 错误签名 hash、稳定性                                                                       |
+| 长期记忆  | `tests/test_long_memory.py`      | validated-only 写、元数据兜底检索、降级 no-op                                               |
+| 健壮性 ⭐ | `tests/test_utils_robustness.py` | 原子写覆盖一致性、写失败保留旧文件 + 清理临时文件、父目录不存在、异常转 handoff_report 落盘 |
+
+---
+
+## 代码健壮性（Robustness）
+
+> 💡 这部分是 **MVP → 可交付产品** 的核心加分项，面试必问。
+
+### 1. 统一原子写：Ctrl+C / 磁盘异常不会写坏文件
+
+所有生成链 `_write_file()`、修复链 `apply_repair_to_file()`、节点层 `apply_fix_node()` 都走 `atomic_write_text()`：
+
+```text
+创建临时文件 → write + flush + fsync → os.replace 原子重命名
+```
+
+中途任何异常 → 旧文件**完整保留** + 临时文件**自动清理**。
+
+- 实现：`lang_agent/utils.py: atomic_write_text()`
+- 测试：`test_atomic_write_text_overwrites_correctly` / `test_atomic_write_text_failure_preserves_original` / `test_atomic_write_text_handles_missing_parent`
+
+### 2. 诊断置信度门控：低置信就坚决不进修复
+
+diagnosis 输出结构化字段：
 
 ```json
 {
   "category": "code_bug",
   "confidence": 0.82,
-  "reasons": ["断言预期值与 API 实际响应字段不匹配", "堆栈行指向 testcases/xxx.py:42 断言语句", "相邻同类用例 schema 一致"],
-  "actionable_hint": "检查 xxx API 200 响应里 schema 的字段名是否确实为 petStatus（大小写/下划线），确认后再让 LLM 重写"
+  "reasons": [
+    "断言预期值不匹配 schema",
+    "堆栈指向 testcases/xxx.py:42",
+    "同组用例一致"
+  ],
+  "actionable_hint": "检查字段名 petStatus 大小写"
 }
 ```
 
-LangGraph 路由 `route_after_classification` 增加门控：
+路由规则：
 
-- 当 `category == code_bug` 且 `confidence < 0.7` → **直接 handoff**，不进入修复链
-- 当 `confidence` 没提供（旧状态 / 外部调用方只给分类）→ 按旧行为放行，**保证向后兼容**
-- `api_bug / env_bug` 不管置信度，都按原规则走 handoff
+- `code_bug 且 confidence < 0.7` → **handoff**，不进修复
+- 没传 `confidence`（旧状态）→ 兼容放行
+- `api_bug / env_bug` → 一律 handoff
 
-对应实现：
+- 实现：`lang_agent/graph/router.py: route_after_classification()`
+- 测试：`test_route_after_classification_confidence_gate`
 
-- Prompt 字段要求：`lang_agent/chains/prompts.py` 的诊断 prompt
-- 数据结构 + heuristic 兜底：`lang_agent/chains/diagnosis_chain.py`（启发式路径也会补默认 confidence/reasons/actionable_hint）
-- 状态扩展：`lang_agent/graph/state.py`（`diagnosis_confidence / diagnosis_reasons / diagnosis_actionable_hint`）
-- 路由门控：`lang_agent/graph/router.py` 的 `route_after_classification()`
+### 3. 统一异常 + 异常时也写 handoff_report
 
-单元测试：`tests/test_router.py` 新增 `test_route_after_classification_confidence_gate`，覆盖：高置信通过 / 阈值边界 0.7 / 低置信 handoff / 缺失 confidence 时兼容旧逻辑 / 非法 confidence 不误伤。
+异常家族（每个都带 `user_hint + details`）：
 
-### 3. 统一异常 + 异常时也写 handoff_report（不再只打堆栈）
+| 异常类                   | 触发场景                                      |
+| ------------------------ | --------------------------------------------- |
+| `OpenAPIParserError`     | 输入文件不存在 / 非法 OpenAPI                 |
+| `TestRunnerError`        | pytest 异常退出码，拿不到结构化报告           |
+| `LLMUnavailableError`    | 未配置 Key / LLM 调用失败                     |
+| `DiagnosisBlockedError`  | 诊断无法产出分类                              |
+| `RepairGateBlockedError` | AST 门控拦截（断言被削 / 没 test\_ / 语法错） |
 
-所有关键路径（OpenAPI 解析、pytest 执行、LLM 调用、修复门控、原子写）都封装成统一的 `BaseSelfHealingError` 子类，每个异常都带：
+**runner 兜底**：generate/heal 抛任意 `BaseSelfHealingError` → 自动
 
-- `user_hint`：面向使用者的下一步操作提示（如「请先启动 mock_api_server.py」）
-- `details`：结构化字典，给 CLI / Streamlit / 日志做进一步处理
+1. 转 `handoff_report`
+2. 写 `RunReport` 到 `.cache/latest_run_report.json`
+3. CLI/Streamlit/Skill 读报告给人看（不是 traceback）
 
-异常家族：
-
-| 异常类 | 触发场景 |
-| --- | --- |
-| `OpenAPIParserError` | 输入文件不存在 / 不是 YAML/JSON / 不合法 OpenAPI |
-| `TestRunnerError` | pytest 进程异常退出码（不是 0/1）且拿不到结构化报告 |
-| `LLMUnavailableError` | 未配置 API Key / LLM 调用失败 |
-| `DiagnosisBlockedError` | 诊断阶段无法产生可用分类 |
-| `RepairGateBlockedError` | 修复 AST 门控拦截：断言数量被削弱 / 缺 `def test_` / 语法错误 |
-
-更重要的是 **LangGraph runner 层兜底**：无论是 generate 还是 heal，只要抛出 `BaseSelfHealingError`，都会自动：
-
-1. 转成 `handoff_report`（category + error_type + reason + details）
-2. 写一份 `RunReport` 到 `.cache/latest_run_report.json`
-3. CLI / Streamlit / Skill 读取报告后，给用户展示可操作提示，而不是 Python traceback
-
-对应实现：
-
-- 异常定义：`lang_agent/utils.py`
-- 封装使用：`parser.py`、`executor.py`、`repair_chain.py`、`graph/nodes.py`
-- Runner 兜底：`lang_agent/graph/runner.py` 的 `_build_handoff_from_exception()` + `run_heal()`/`run_generate()` 捕获
-
-单元测试：`tests/test_utils_robustness.py` 新增 `test_handoff_report_written_when_base_error_raised`，验证：
-- 抛出 `OpenAPIParserError` 后转 `RunReport`
-- `handoff_report.category / error_type / details` 结构化落盘
-- `final_result.stderr_tail` 就是 `user_hint`（方便前端直接显示）
-
-### 开发者验证（两条命令证明改造）
-
-```bash
-# 语法 + 自测回归（本次新增 3 个 test 函数）
-pytest tests -q
-# 期望看到 ........ 全绿，当前为 11 passed
-
-# 验证报告落盘（故意用不存在的 openapi 文件触发）
-python cli.py generate -i data/not_exists.yaml -o generated_tests 2>&1 || true
-# 之后查看 .cache/latest_run_report.json，会发现：
-#   ok=false / stopped_reason=stopped_on_env_bug
-#   handoff_report.error_type=OpenAPIParserError
-#   handoff_report.reason=可操作 user_hint
-```
+- 实现：`lang_agent/graph/runner.py: _build_handoff_from_exception()`
+- 测试：`test_handoff_report_written_when_base_error_raised`
 
 ---
 
-## 常见问题（Troubleshooting）
+## 路线图 Roadmap
 
-### 1) 无法连接到 localhost:8000 / 目标计算机拒绝连接
+### P0（当前已交付 ✅）
 
-原因：mock 服务或你的真实后端没有启动。  
-处理：
+- [x] OpenAPI → Endpoint → Scenario → 分层 pytest 工程全链路
+- [x] pytest 结构化失败采集
+- [x] 三类失败分类（code_bug / api_bug / env_bug）
+- [x] 诊断置信度 / reasons / actionable_hint + 低置信度 handoff
+- [x] Short Memory（file::signature → 0 次 LLM 复用）
+- [x] Long Memory（ChromaDB validated-only 写 + few-shot 检索）
+- [x] 修复 AST 门控（断言削弱 / 语法 / 缺 test\_ 拦截）
+- [x] 原子写 + 统一异常家族 + runner 兜底 handoff_report
+- [x] 三层入口：CLI / Streamlit / Claude Code Skill
+- [x] 13 个单元测试全绿
 
-- 先运行 `python mock_api_server.py`
-- 或把 `config.yaml` / Streamlit 侧边栏的 `base_url` 改成你的真实服务地址
+### P1（下一批高 ROI，校招生简历可作为"持续迭代"叙事）
 
-### 2) invalid_api_key / 401
+- [ ] **统一 LLM 重试 + 优雅降级**：封装 LLM 调用门面（retry / 超时 / fallback 到 heuristic 诊断），把诊断/生成/修复各自的 retry decorator 收归一处
+- [ ] **CI（GitHub Actions）**：PR 触发 `pytest tests -q` + generate 冒烟 + 输出报告 Artifact
+- [ ] **评价数据集 & 离线评测指标**：在 `evaluation/` 下放 20~30 条带标签的错误样本，统计 `heal成功率 / 手递手率 / 误修率 / LLM调用次数`
+- [ ] **轨迹追踪 TrajectoryTracker**：每一步的输入输出落盘 `.cache/trajectory/{run_id}.jsonl`，做事后 replay / 门控调参
+- [ ] **上下文管理器 ContextManager**：把 run_id、trace_id、user、环境、target_url 打包，所有链共享，日志 + 报告一次带齐
+- [ ] **更严格的 AST 断言门控**：不只是计数比对，而是 AST 比较"断言类型、被断言字段"，直接识别削弱型修复（如把 `assert data['id']==` 改成 `assert data`）
 
-原因：`OPENAI_API_KEY` 未配置或不正确。  
-处理：检查 `.env` 中的 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`，并确认模型名称配置正确。
+### P2（锦上添花，面试"未来规划"段说）
 
-### 3) 生成物里出现老的平铺 test_xxx.py
-
-原因：你本地残留了旧的 `generated_tests/` 产物。  
-处理：删除整个 `generated_tests/` 后重新 generate。
-
-### 4) Claude Code 中 Skill 没有被识别
-
-原因：Claude Code 需要重新加载项目才能发现新 Skill。  
-处理：重启 Claude Code 会话，或在项目根目录重新打开。确保 `.claude/skills/api-test-agent/SKILL.md` 文件存在。
-
-### 5) Claude Code Skill 执行命令报错
-
-原因：Claude 的工作目录可能不在项目根目录。  
-处理：在对话中明确告诉 Claude "请先 cd 到项目目录"，或使用绝对路径。
+- [ ] **MCP Server**：把 generate / heal / report 暴露成 MCP Tools，任意 LLM 宿主可调用
+- [ ] **可观测性**：opentelemetry 接入 LangGraph tracing，配合 Prometheus + Grafana
+- [ ] **Stamina 自动重试**：对生成的测试用例，在 flaky 检测时使用 `stamina` 重试装饰器
+- [ ] **CTRF 报告格式**：输出 Common Test Report Format，对接 DevOps 大盘
+- [ ] **UI 体验升级**：Streamlit 看板支持 1) 每轮修复 diff 对比 2) 手动"接受/拒绝修复" 3) LLM 输入输出可视化
+- [ ] **Multi Spec Support**：Har 录制 → 生成 OpenAPI → 生成测试的闭环（录制即文档即测试）
 
 ---
 
-## 开发者验证
+## 常见问题 FAQ
 
-运行项目自测：
+### 1) `localhost:8000` 拒绝连接？
+
+mock 后端没启动。先跑：
 
 ```bash
-pytest tests -q
+python mock_api_server.py
 ```
+
+或把 `config.yaml` / Streamlit 侧边栏的 `base_url` 改成你真实后端地址。
+
+### 2) `invalid_api_key / 401`？
+
+检查 `.env` 中 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `config.yaml` 的 `model.name` 三者是否匹配。
+
+### 3) 生成物里出现老的平铺 `test_xxx.py`？
+
+本地残留旧的 `generated_tests/` 产物，删掉整个目录重新 generate。
+
+### 4) 不配置 LLM 能不能用？
+
+可以。**生成链路 100% 纯规则**不依赖 LLM；自愈链路只有 short_memory 没命中时才需要 LLM，此时会抛出 `LLMUnavailableError` 并在报告里写明下一步。
+
+### 5) Claude Code 里 Skill 没识别？
+
+重启 Claude Code 会话或重新打开项目，确认 `.claude/skills/api-test-agent/SKILL.md` 存在即可。
+
+---
+
+<div align="center">
+
+Made for 2026 SDET 校招作品集 · **接口自动化 × LLM Agent × LangGraph Harness** · Star 欢迎 ⭐
+
+</div>
