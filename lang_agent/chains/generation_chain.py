@@ -22,6 +22,7 @@ except Exception:  # type: ignore[no-redef]
     def wait_exponential(*args, **kwargs):  # type: ignore[no-redef]
         return None
 
+from ..utils import atomic_write_text
 from ..config import Settings
 from ..parser import Endpoint
 from ..scenario_builder import Scenario
@@ -157,8 +158,7 @@ def _resource_seed_data(resource: str, endpoints: list[Endpoint]) -> dict[str, A
 
 
 def _write_file(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    atomic_write_text(path, text, encoding="utf-8")
 
 
 def _clean_previous_generated_tests(output_dir: Path) -> None:

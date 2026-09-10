@@ -4,17 +4,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..chains.diagnosis_chain import diagnose
+from ..chains.diagnosis_chain import DiagnosisBlockedError, diagnose
 from ..chains.generation_chain import generate_pytest_project
-from ..chains.repair_chain import repair_test_file
+from ..chains.repair_chain import LLMUnavailableError, RepairGateBlockedError, repair_test_file
 from ..config import Settings
-from ..executor import run_pytest
+from ..executor import TestRunnerError, run_pytest
 from ..memory.long_memory import LongMemory
 from ..memory.retriever import retrieve_few_shot_examples
 from ..memory.short_memory import ShortMemory
-from ..parser import parse_openapi
+from ..parser import OpenAPIParserError, parse_openapi
 from ..report import RepairHistoryEntry, RunReport, save_run_report
 from ..scenario_builder import build_scenarios
+from ..utils import BaseSelfHealingError, atomic_write_text
 from .state import AgentState
 
 
@@ -71,7 +72,16 @@ class GraphNodes:
         )
 
     def parse_openapi_node(self, state: AgentState) -> AgentState:
-        endpoints = parse_openapi(state["openapi_path"])
+        try:
+            endpoints = parse_openapi(state["openapi_path"])
+        except BaseSelfHealingError:
+            raise
+        except Exception as exc:
+            raise OpenAPIParserError(
+                f"解析 OpenAPI 失败：{exc}",
+                user_hint="请确认文件是合法的 Swagger/OpenAPI 文档，并包含 paths 字段。",
+                details={"path": str(state.get("openapi_path")), "error_type": type(exc).__name__},
+            ) from exc
         data: list[dict[str, Any]] = []
         for ep in endpoints:
             data.append(
@@ -107,7 +117,16 @@ class GraphNodes:
 
     def run_tests_node(self, state: AgentState) -> AgentState:
         report_path = Path(".cache") / "pytest_report.json"
-        result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+        try:
+            result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+        except BaseSelfHealingError:
+            raise
+        except Exception as exc:
+            raise TestRunnerError(
+                f"执行 pytest 失败：{exc}",
+                user_hint="请先手动运行 `python -m pytest generated_tests -q` 复现问题，并确认 tests 目录结构正确。",
+                details={"tests_path": str(state.get("tests_path")), "error_type": type(exc).__name__},
+            ) from exc
         failed_tests = [
             {"nodeid": f.nodeid, "file": f.file, "call_longrepr": f.call_longrepr}
             for f in result.failures
@@ -144,6 +163,9 @@ class GraphNodes:
             "error_type": d.error_type,
             "error_signature": d.error_signature,
             "error_summary": d.error_summary,
+            "diagnosis_confidence": float(d.confidence),
+            "diagnosis_reasons": list(d.reasons),
+            "diagnosis_actionable_hint": d.actionable_hint,
         }
 
     def build_signature_node(self, state: AgentState) -> AgentState:
@@ -195,7 +217,16 @@ class GraphNodes:
     def apply_fix_node(self, state: AgentState) -> AgentState:
         file_path = _resolve_test_file(state["tests_path"], state["current_file"])
         proposed_fix_code = str(state.get("proposed_fix_code") or "")
-        file_path.write_text(proposed_fix_code, encoding="utf-8")
+        try:
+            atomic_write_text(file_path, proposed_fix_code)
+        except BaseSelfHealingError:
+            raise
+        except Exception as exc:
+            raise RepairGateBlockedError(
+                f"原子写入修复文件失败：{exc}",
+                user_hint="请检查目标目录权限与磁盘空间；必要时手动保存修复结果。",
+                details={"file": str(file_path)},
+            ) from exc
 
         repair_round = int(state.get("repair_round", 0)) + 1
         history = list(state.get("repair_history") or [])
@@ -209,14 +240,23 @@ class GraphNodes:
                 short_memory_hit=bool(state.get("short_memory_hit")),
                 long_memory_used=bool(state.get("long_memory_used")),
                 outcome="fix_applied",
-                notes="已回写 current_file，等待全量回归验证",
+                notes="已原子回写 current_file，等待全量回归验证",
             ).to_dict()
         )
         return {"repair_round": repair_round, "repair_history": history}
 
     def retest_node(self, state: AgentState) -> AgentState:
         report_path = Path(".cache") / "pytest_report_after_fix.json"
-        result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+        try:
+            result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+        except BaseSelfHealingError:
+            raise
+        except Exception as exc:
+            raise TestRunnerError(
+                f"修复后回归 pytest 失败：{exc}",
+                user_hint="请先手动运行 `python -m pytest generated_tests -q` 复现问题。",
+                details={"tests_path": str(state.get("tests_path")), "error_type": type(exc).__name__},
+            ) from exc
         failed_tests = [
             {"nodeid": f.nodeid, "file": f.file, "call_longrepr": f.call_longrepr}
             for f in result.failures
@@ -226,6 +266,13 @@ class GraphNodes:
             last = dict(history[-1])
             last["outcome"] = "passed" if result.exit_code == 0 and not failed_tests else "failed"
             last["notes"] = "全量回归通过" if result.exit_code == 0 and not failed_tests else "全量回归仍失败"
+            if result.exit_code == 0 and not failed_tests:
+                last.setdefault("diagnosis", {})
+                last["diagnosis"] = {
+                    "confidence": float(state.get("diagnosis_confidence") or 0.0),
+                    "reasons": list(state.get("diagnosis_reasons") or []),
+                    "actionable_hint": str(state.get("diagnosis_actionable_hint") or ""),
+                }
             history[-1] = last
         return {
             "failed_tests": failed_tests,

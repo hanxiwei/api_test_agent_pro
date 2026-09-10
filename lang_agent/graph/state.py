@@ -20,6 +20,9 @@ class AgentState(TypedDict, total=False):
     error_type: str
     error_signature: str
     error_summary: str
+    diagnosis_confidence: float
+    diagnosis_reasons: list[str]
+    diagnosis_actionable_hint: str
     short_memory_hit: bool
     retrieved_examples: list[str]
     proposed_fix_code: str
@@ -31,3 +34,5 @@ class AgentState(TypedDict, total=False):
     last_stderr: str
     tests_passed: bool
     long_memory_used: bool
+    failures_count: int
+    stopped_reason: str

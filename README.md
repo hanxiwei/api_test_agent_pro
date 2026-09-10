@@ -328,6 +328,110 @@ python -m streamlit run app.py
 
 ---
 
+## 代码健壮性与可操作错误（Robustness）
+
+为了解决 MVP 阶段常见的「修到一半写坏文件 / 诊断不确定仍乱修 / 报错只打堆栈」三类工程化问题，本项目默认开启下面三层保护，任何一条都能作为面试里「从 MVP 到可交付产品」的证据。
+
+### 1. 统一原子写：中途 Ctrl+C 或磁盘异常不会写坏文件
+
+所有**生成工程**（`api/ testcases/ utils/ data/ config/ ...`）与**修复回写**的文件落盘全部走 `atomic_write_text()`：
+
+- 先写入同目录的临时文件（保证目录存在可写、UTF-8 编码、换行符稳定）
+- 对临时文件 `flush()` + `os.fsync()`，强制落盘到磁盘
+- 最后调用 `os.replace()` 做原子重命名，目标文件要么完整旧版、要么完整新版，**绝不会出现半截内容**
+- 父目录不存在会自动 `mkdir(parents=True, exist_ok=True)`
+
+对应实现与接入点：
+
+- 工具：`lang_agent/utils.py` → `atomic_write_text()`
+- 生成链：`lang_agent/chains/generation_chain.py` 的 `_write_file()` 全部走原子写
+- 修复链：`lang_agent/chains/repair_chain.py` 的 `apply_repair_to_file()` 用原子写覆盖回目标文件
+- 节点层：`lang_agent/graph/nodes.py` 的 `apply_fix_node` 统一入口
+
+单元测试（面试可直接甩）：`tests/test_utils_robustness.py` 中
+- `test_atomic_write_text_overwrites_correctly`：正常覆盖写一致性
+- `test_atomic_write_text_failure_preserves_original`：写过程模拟磁盘异常 → 原文件**完整保留旧内容**
+- `test_atomic_write_text_handles_missing_parent`：父目录不存在也能原子落盘
+
+### 2. 诊断置信度 + 低置信度不进入修复（防误修）
+
+失败分类不仅返回 `code_bug / api_bug / env_bug`，现在诊断链还会强制输出结构化字段：
+
+```json
+{
+  "category": "code_bug",
+  "confidence": 0.82,
+  "reasons": ["断言预期值与 API 实际响应字段不匹配", "堆栈行指向 testcases/xxx.py:42 断言语句", "相邻同类用例 schema 一致"],
+  "actionable_hint": "检查 xxx API 200 响应里 schema 的字段名是否确实为 petStatus（大小写/下划线），确认后再让 LLM 重写"
+}
+```
+
+LangGraph 路由 `route_after_classification` 增加门控：
+
+- 当 `category == code_bug` 且 `confidence < 0.7` → **直接 handoff**，不进入修复链
+- 当 `confidence` 没提供（旧状态 / 外部调用方只给分类）→ 按旧行为放行，**保证向后兼容**
+- `api_bug / env_bug` 不管置信度，都按原规则走 handoff
+
+对应实现：
+
+- Prompt 字段要求：`lang_agent/chains/prompts.py` 的诊断 prompt
+- 数据结构 + heuristic 兜底：`lang_agent/chains/diagnosis_chain.py`（启发式路径也会补默认 confidence/reasons/actionable_hint）
+- 状态扩展：`lang_agent/graph/state.py`（`diagnosis_confidence / diagnosis_reasons / diagnosis_actionable_hint`）
+- 路由门控：`lang_agent/graph/router.py` 的 `route_after_classification()`
+
+单元测试：`tests/test_router.py` 新增 `test_route_after_classification_confidence_gate`，覆盖：高置信通过 / 阈值边界 0.7 / 低置信 handoff / 缺失 confidence 时兼容旧逻辑 / 非法 confidence 不误伤。
+
+### 3. 统一异常 + 异常时也写 handoff_report（不再只打堆栈）
+
+所有关键路径（OpenAPI 解析、pytest 执行、LLM 调用、修复门控、原子写）都封装成统一的 `BaseSelfHealingError` 子类，每个异常都带：
+
+- `user_hint`：面向使用者的下一步操作提示（如「请先启动 mock_api_server.py」）
+- `details`：结构化字典，给 CLI / Streamlit / 日志做进一步处理
+
+异常家族：
+
+| 异常类 | 触发场景 |
+| --- | --- |
+| `OpenAPIParserError` | 输入文件不存在 / 不是 YAML/JSON / 不合法 OpenAPI |
+| `TestRunnerError` | pytest 进程异常退出码（不是 0/1）且拿不到结构化报告 |
+| `LLMUnavailableError` | 未配置 API Key / LLM 调用失败 |
+| `DiagnosisBlockedError` | 诊断阶段无法产生可用分类 |
+| `RepairGateBlockedError` | 修复 AST 门控拦截：断言数量被削弱 / 缺 `def test_` / 语法错误 |
+
+更重要的是 **LangGraph runner 层兜底**：无论是 generate 还是 heal，只要抛出 `BaseSelfHealingError`，都会自动：
+
+1. 转成 `handoff_report`（category + error_type + reason + details）
+2. 写一份 `RunReport` 到 `.cache/latest_run_report.json`
+3. CLI / Streamlit / Skill 读取报告后，给用户展示可操作提示，而不是 Python traceback
+
+对应实现：
+
+- 异常定义：`lang_agent/utils.py`
+- 封装使用：`parser.py`、`executor.py`、`repair_chain.py`、`graph/nodes.py`
+- Runner 兜底：`lang_agent/graph/runner.py` 的 `_build_handoff_from_exception()` + `run_heal()`/`run_generate()` 捕获
+
+单元测试：`tests/test_utils_robustness.py` 新增 `test_handoff_report_written_when_base_error_raised`，验证：
+- 抛出 `OpenAPIParserError` 后转 `RunReport`
+- `handoff_report.category / error_type / details` 结构化落盘
+- `final_result.stderr_tail` 就是 `user_hint`（方便前端直接显示）
+
+### 开发者验证（两条命令证明改造）
+
+```bash
+# 语法 + 自测回归（本次新增 3 个 test 函数）
+pytest tests -q
+# 期望看到 ........ 全绿，当前为 11 passed
+
+# 验证报告落盘（故意用不存在的 openapi 文件触发）
+python cli.py generate -i data/not_exists.yaml -o generated_tests 2>&1 || true
+# 之后查看 .cache/latest_run_report.json，会发现：
+#   ok=false / stopped_reason=stopped_on_env_bug
+#   handoff_report.error_type=OpenAPIParserError
+#   handoff_report.reason=可操作 user_hint
+```
+
+---
+
 ## 常见问题（Troubleshooting）
 
 ### 1) 无法连接到 localhost:8000 / 目标计算机拒绝连接

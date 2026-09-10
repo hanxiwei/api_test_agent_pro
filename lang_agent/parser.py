@@ -12,6 +12,8 @@ except Exception:  # type: ignore[no-redef]
 
 import yaml
 
+from .utils import OpenAPIParserError
+
 
 HttpMethod = Literal["get", "post", "put", "patch", "delete", "head", "options"]
 
@@ -49,7 +51,20 @@ def load_openapi_spec(openapi_path: str | Path) -> dict[str, Any]:
 
 
 def parse_openapi(openapi_path: str | Path) -> list[Endpoint]:
+    openapi_path = Path(openapi_path)
+    if not openapi_path.exists():
+        raise OpenAPIParserError(
+            f"OpenAPI 文件不存在：{openapi_path}",
+            user_hint="请在 Streamlit 上传文件或填写本地路径；示例可使用 `data/petstore.yaml`。",
+            details={"path": str(openapi_path)},
+        )
     spec = load_openapi_spec(openapi_path)
+    if not isinstance(spec, dict):
+        raise OpenAPIParserError(
+            f"OpenAPI 文件解析后不是合法字典：{openapi_path}",
+            user_hint="请确认文件是合法的 YAML/JSON，并包含 openapi/swagger 顶层字段。",
+            details={"path": str(openapi_path), "type": type(spec).__name__},
+        )
 
     paths: dict[str, Any] = spec.get("paths", {}) or {}
     endpoints: list[Endpoint] = []

@@ -45,6 +45,9 @@ def diagnosis_prompt(error_log: str) -> str:
 - error_type: 简短错误类型，例如 AssertionError / ConnectionError
 - error_signature: 稳定签名，用于缓存与检索，尽量去掉行号与随机值
 - error_summary: 1 到 2 句中文摘要
+- confidence: 0 到 1 之间的浮点数，表示分类置信度
+- reasons: 字符串数组，列出 2~4 条分类依据或关键观察
+- actionable_hint: 一句话可操作提示（例如“请先启动本地 mock_api_server.py”或“请检查测试中的断言”）
 
 失败日志：
 {error_log}

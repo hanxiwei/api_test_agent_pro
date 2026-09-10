@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .utils import TestRunnerError
+
 
 @dataclass(frozen=True)
 class TestFailure:
@@ -23,6 +25,19 @@ class PytestRunResult:
     stderr: str
     report: dict[str, Any] | None
     failures: list[TestFailure]
+
+
+def _user_hint_for(test_path: Path, exit_code: int, stderr: str) -> str:
+    log = stderr.lower()
+    if exit_code == 5:
+        return "pytest 未收集到任何用例，请确认 tests 目录是否为生成后的分层工程，且 testpaths=testcases 已生效。"
+    if "modulenotfounderror" in log or "importerror" in log:
+        return "执行 pytest 时出现导入错误，请确认 generated_tests 目录下有 api/utils/conftest.py/pytest.ini，并从项目根运行。"
+    if "file not found" in log:
+        return "tests_path 指向的目录不存在，请确认 `python cli.py generate` 已先完成生成。"
+    return (
+        f"pytest 执行失败（exit_code={exit_code}）。请先手动运行 `python -m pytest {test_path} -q` 复现问题，再回到自愈流程。"
+    )
 
 
 def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str | Path) -> PytestRunResult:
@@ -64,10 +79,24 @@ def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str |
                 longrepr = str(call.get("longrepr", "")) or str(call.get("crash", "")) or ""
             failures.append(TestFailure(nodeid=nodeid, file=file_part, call_longrepr=longrepr))
 
+    exit_code = int(p.returncode)
+    stdout = p.stdout or ""
+    stderr = p.stderr or ""
+    if exit_code not in {0, 1} and not report and not failures:
+        raise TestRunnerError(
+            f"pytest 进程异常退出（exit_code={exit_code}）",
+            user_hint=_user_hint_for(test_path, exit_code, stderr),
+            details={
+                "command": cmd,
+                "exit_code": exit_code,
+                "stdout_tail": stdout[-1000:],
+                "stderr_tail": stderr[-1000:],
+            },
+        )
     return PytestRunResult(
-        exit_code=int(p.returncode),
-        stdout=p.stdout or "",
-        stderr=p.stderr or "",
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
         report=report,
         failures=failures,
     )

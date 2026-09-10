@@ -15,9 +15,20 @@ def route_after_test_run(state: AgentState) -> str:
 
 def route_after_classification(state: AgentState) -> str:
     category = str(state.get("error_category") or "")
-    if category in {"code_bug", "api_bug", "env_bug"}:
+    confidence_raw = state.get("diagnosis_confidence")
+    if category not in {"code_bug", "api_bug", "env_bug"}:
+        return "unknown"
+    if category != "code_bug":
         return category
-    return "unknown"
+    if confidence_raw is None:
+        return category
+    try:
+        confidence = float(confidence_raw)
+    except (TypeError, ValueError):
+        return category
+    if confidence < 0.7:
+        return "handoff"
+    return category
 
 
 def route_after_short_memory(state: AgentState) -> str:
