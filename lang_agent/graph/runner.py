@@ -9,9 +9,9 @@ except Exception:  # type: ignore[no-redef]
     START = "__start__"  # type: ignore[assignment]
     StateGraph = None  # type: ignore[assignment]
 
-from ..config import Settings
-from ..report import DEFAULT_REPORT_PATH, HealReport, RepairHistoryEntry, RunReport, save_run_report
-from ..utils import BaseSelfHealingError
+from ..core.config import Settings
+from ..io.report import DEFAULT_REPORT_PATH, HealReport, RepairHistoryEntry, RunReport, save_run_report
+from ..core.utils import BaseSelfHealingError
 from .nodes import GraphNodes
 from .router import (
     route_after_classification,

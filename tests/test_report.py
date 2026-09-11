@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lang_agent.report import RunReport, load_run_report, save_run_report
+from lang_agent.io.report import RunReport, load_run_report, save_run_report
 
 
 def test_save_and_load_run_report(tmp_path: Path):

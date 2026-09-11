@@ -1,4 +1,4 @@
-from lang_agent.parser import parse_openapi
+from lang_agent.io.parser import parse_openapi
 
 
 def test_parse_openapi_petstore():

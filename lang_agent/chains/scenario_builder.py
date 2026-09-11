@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from .parser import Endpoint
+from ..io.parser import Endpoint
 
 
 @dataclass(frozen=True)
@@ -46,4 +46,3 @@ def build_scenarios(endpoints: Iterable[Endpoint]) -> list[Scenario]:
             )
 
     return scenarios
-

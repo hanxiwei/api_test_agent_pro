@@ -11,7 +11,7 @@ try:
 except Exception:  # type: ignore[no-redef]
     chromadb = None  # type: ignore[assignment]
 
-from ..chains.llm_factory import build_embeddings
+from ..llm.factory import build_embeddings
 
 
 @dataclass

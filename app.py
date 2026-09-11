@@ -7,9 +7,9 @@ from typing import Any
 
 import streamlit as st
 
-from lang_agent.config import load_settings
+from lang_agent.core.config import load_settings
 from lang_agent.graph.runner import run_generate, run_heal
-from lang_agent.report import load_run_report
+from lang_agent.io.report import load_run_report
 
 
 st.set_page_config(page_title="API Test Agent", layout="wide")

@@ -1,4 +1,4 @@
-from lang_agent.signatures import extract_error_signature, extract_error_type
+from lang_agent.core.signatures import extract_error_signature, extract_error_type
 
 
 def test_extract_error_type_and_signature():

@@ -318,41 +318,47 @@ Skill 路径：`.claude/skills/api-test-agent/SKILL.md`，打开项目会被 Cla
 
 ```text
 api_test_agent_02/
-├── lang_agent/                          # ⭐ 核心内核
-│   ├── chains/                          # 能力链（Parser/生成/诊断/修复/执行）
+├── lang_agent/                          # ⭐ 核心内核（业务内核 + 横切能力解耦）
+│   ├── chains/                          # 业务能力链（Parser之后、生成/诊断/修复之前的编排）
 │   │   ├── generation_chain.py          #   分层工程生成 + 原子写
 │   │   ├── diagnosis_chain.py           #   三类诊断 + confidence / reasons / hint
 │   │   ├── repair_chain.py              #   LLM 修复 + AST 门控 + apply_repair_to_file
-│   │   ├── prompts.py                   #   所有 prompt 模板
-│   │   └── llm_factory.py               #   模型工厂（ChatOpenAI 兼容）
-│   ├── graph/                           # LangGraph 编排
-│   │   ├── runner.py                    #   编译图 + run_generate / run_heal + 异常兜底
-│   │   ├── nodes.py                     #   parse / run_tests / classify / build_sig / retest ...
-│   │   ├── router.py                    #   分支路由 + 低置信度 handoff 门控
-│   │   └── state.py                     #   AgentState（含 diagnosis_* 字段）
+│   │   └── scenario_builder.py          #   Endpoint → CRUD 链 + 单接口 Scenario
+│   ├── graph/                           # LangGraph 编排（状态机 + 路由 + 异常兜底）
+│   │   ├── runner.py                    #   编译 Generate / Heal 图 + run_* 入口 + 异常兜底写 handoff
+│   │   ├── nodes.py                     #   parse / build_scenarios / run_tests / classify / retest ...
+│   │   ├── router.py                    #   四类路由 + code_bug 置信度<0.7 → handoff
+│   │   └── state.py                     #   AgentState（含 diagnosis_* 三字段）
 │   ├── memory/                          # 双层记忆
-│   │   ├── short_memory.py              #   错误签名 KV
+│   │   ├── short_memory.py              #   file::error_signature → fix_code KV
 │   │   ├── long_memory.py               #   ChromaDB（validated-only 写入）
 │   │   └── retriever.py                 #   few-shot 召回
-│   ├── parser.py                        # OpenAPI 解析 + OpenAPIParserError
-│   ├── executor.py                      # pytest 子进程 + TestRunnerError
-│   ├── scenario_builder.py              # Endpoint → Scenario
-│   ├── signatures.py                    # 错误签名 hash
-│   ├── report.py                        # RunReport / HealReport / save / load
-│   ├── config.py                        # Pydantic 配置加载
-│   └── utils.py                         # ⭐ atomic_write_text + 统一异常家族
+│   ├── io/                              # ⭐ 横切：IO / 边界层（外部世界读写的副作用集中）
+│   │   ├── parser.py                    #   OpenAPI → list[Endpoint]，无 Prance 纯 YAML 兜底
+│   │   ├── executor.py                  #   宿主机 pytest 子进程 + 结构化失败 + TestRunnerError
+│   │   ├── report.py                    #   RunReport / HealReport / RepairHistoryEntry / load save
+│   │   └── sandbox/                     #   ⭐ 预留安全执行层：P1 接入 HostExecutor / DockerExecutor / policy
+│   ├── llm/                             # ⭐ 横切：模型供应商与 Prompt（可替换）
+│   │   ├── factory.py                   #   build_chat_llm / build_embeddings（DeepSeek Embedding 自动降级）
+│   │   └── prompts.py                   #   generation / diagnosis / repair 三条 prompt
+│   └── core/                            # ⭐ 横切：通用底座（零业务依赖）
+│       ├── config.py                    #   yaml + env + CLI overrides 合并 → Settings
+│       ├── signatures.py                #   行号/指针归一化 + 300字稳定错误签名
+│       └── utils.py                     #   atomic_write_text + BaseSelfHealingError 五种子类
 ├── tests/                               # 项目本身的单元/回归测试（不是生成的接口测试）
 │   ├── test_parser.py
 │   ├── test_report.py
-│   ├── test_router.py                   # 含置信度门控用例
+│   ├── test_router.py                   # 含置信度 handoff 门控用例
 │   ├── test_signatures.py
 │   ├── test_long_memory.py
 │   └── test_utils_robustness.py         # ⭐ 原子写 / handoff_report 用例
 ├── data/                                # 示例 OpenAPI 文档
 │   ├── petstore.yaml
 │   └── todo_demo.yaml
-├── docs/
-│   └── 21天复写计划-API-Test-Agent.md   # 面试 21 天学习 & 复写路线
+├── docs/                                # 架构与设计沉淀（面试直接打开看）
+│   ├── 21天复写计划-API-Test-Agent.md   # 面试 21 天学习 & 复写路线
+│   ├── architecture.md                  # ⭐ 分层架构、Generate/Heal 数据流、门控熔断清单
+│   └── design_decisions.md              # ⭐ 7 条 ADR：为什么 LangGraph、阈值为什么是 0.7...
 ├── .claude/skills/api-test-agent/       # Claude Code Skill 定义
 ├── cli.py                               # Click CLI：generate / heal / report
 ├── app.py                               # Streamlit 可视化看板
@@ -365,11 +371,13 @@ api_test_agent_02/
 └── README.md
 ```
 
-### 生成产物目录（可删、随时能重新生成）
+### 生成产物目录（可删、随时能重新生成，不进仓库）
 
-- `generated_tests/`：对外产出的分层 pytest 工程
-- `.cache/`：运行报告、短期记忆缓存
-- `.chroma_acceptance/`：长期记忆向量库（启用长期记忆时生成）
+- `generated_tests/`：对外产出的分层 pytest 工程（CLI 默认输出路径，后续统一到 `output/generated/`）
+- `.cache/`：运行报告、短期记忆缓存、pytest json-report
+- `.chroma_acceptance/`：长期记忆向量库（启用长期记忆时自动生成）
+
+> 架构与决策沉淀见独立文档：[architecture.md](docs/architecture.md) 与 [design_decisions.md](docs/design_decisions.md)。
 
 ---
 

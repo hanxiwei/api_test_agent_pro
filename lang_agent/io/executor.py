@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .utils import TestRunnerError
+from ..core.utils import TestRunnerError
 
 
 @dataclass(frozen=True)

@@ -7,15 +7,15 @@ from typing import Any
 from ..chains.diagnosis_chain import DiagnosisBlockedError, diagnose
 from ..chains.generation_chain import generate_pytest_project
 from ..chains.repair_chain import LLMUnavailableError, RepairGateBlockedError, repair_test_file
-from ..config import Settings
-from ..executor import TestRunnerError, run_pytest
+from ..core.config import Settings
+from ..io.executor import TestRunnerError, run_pytest
 from ..memory.long_memory import LongMemory
 from ..memory.retriever import retrieve_few_shot_examples
 from ..memory.short_memory import ShortMemory
-from ..parser import OpenAPIParserError, parse_openapi
-from ..report import RepairHistoryEntry, RunReport, save_run_report
-from ..scenario_builder import build_scenarios
-from ..utils import BaseSelfHealingError, atomic_write_text
+from ..io.parser import OpenAPIParserError, parse_openapi
+from ..io.report import RepairHistoryEntry, RunReport, save_run_report
+from ..chains.scenario_builder import build_scenarios
+from ..core.utils import BaseSelfHealingError, atomic_write_text
 from .state import AgentState
 
 

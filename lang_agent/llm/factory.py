@@ -9,7 +9,7 @@ except Exception:  # type: ignore[no-redef]
     ChatOpenAI = None  # type: ignore[assignment]
     OpenAIEmbeddings = None  # type: ignore[assignment]
 
-from ..config import ModelSettings
+from ..core.config import ModelSettings
 
 
 def _env(name: str) -> str | None:

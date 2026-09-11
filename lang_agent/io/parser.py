@@ -12,7 +12,7 @@ except Exception:  # type: ignore[no-redef]
 
 import yaml
 
-from .utils import OpenAPIParserError
+from ..core.utils import OpenAPIParserError
 
 
 HttpMethod = Literal["get", "post", "put", "patch", "delete", "head", "options"]

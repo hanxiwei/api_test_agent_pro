@@ -76,4 +76,3 @@ def load_settings(config_path: str | Path, overrides: dict[str, Any] | None = No
             chroma_dir=str(memory.get("chroma_dir", ".chroma")),
         ),
     )
-

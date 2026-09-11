@@ -19,10 +19,10 @@ except Exception:  # type: ignore[no-redef]
     def wait_exponential(*args, **kwargs):  # type: ignore[no-redef]
         return None
 
-from ..config import Settings
-from ..signatures import extract_error_signature, extract_error_type
-from .llm_factory import build_chat_llm
-from .prompts import diagnosis_prompt
+from ..core.config import Settings
+from ..core.signatures import extract_error_signature, extract_error_type
+from ..llm.factory import build_chat_llm
+from ..llm.prompts import diagnosis_prompt
 
 
 @dataclass(frozen=True)

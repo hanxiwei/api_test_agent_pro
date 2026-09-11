@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from lang_agent.report import RunReport, load_run_report, save_run_report
-from lang_agent.utils import (
+from lang_agent.io.report import RunReport, load_run_report, save_run_report
+from lang_agent.core.utils import (
     BaseSelfHealingError,
     OpenAPIParserError,
     atomic_write_text,

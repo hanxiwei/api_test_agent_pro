@@ -22,12 +22,12 @@ except Exception:  # type: ignore[no-redef]
     def wait_exponential(*args, **kwargs):  # type: ignore[no-redef]
         return None
 
-from ..utils import atomic_write_text
-from ..config import Settings
-from ..parser import Endpoint
-from ..scenario_builder import Scenario
-from .llm_factory import build_chat_llm
-from .prompts import generation_prompt
+from ..core.utils import atomic_write_text
+from ..core.config import Settings
+from ..io.parser import Endpoint
+from ..chains.scenario_builder import Scenario
+from ..llm.factory import build_chat_llm
+from ..llm.prompts import generation_prompt
 
 
 def _extract_code(text: str) -> str:

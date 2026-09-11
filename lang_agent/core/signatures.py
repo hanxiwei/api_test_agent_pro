@@ -24,4 +24,3 @@ def extract_error_signature(error_log: str) -> str:
     last = re.sub(r"\\", "/", last)
     last = re.sub(r"\s+", " ", last).strip()
     return last[:300]
-

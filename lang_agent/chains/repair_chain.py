@@ -15,10 +15,10 @@ except Exception:  # type: ignore[no-redef]
     def wait_exponential(*args, **kwargs):  # type: ignore[no-redef]
         return None
 
-from ..config import Settings
-from ..utils import LLMUnavailableError, RepairGateBlockedError, atomic_write_text
-from .llm_factory import build_chat_llm
-from .prompts import repair_prompt
+from ..core.config import Settings
+from ..core.utils import LLMUnavailableError, RepairGateBlockedError, atomic_write_text
+from ..llm.factory import build_chat_llm
+from ..llm.prompts import repair_prompt
 
 
 def _extract_code(text: str) -> str:
