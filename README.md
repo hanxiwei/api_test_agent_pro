@@ -377,7 +377,7 @@ api_test_agent_02/
 - `.cache/`：运行报告、短期记忆缓存、pytest json-report
 - `.chroma_acceptance/`：长期记忆向量库（启用长期记忆时自动生成）
 
-> 架构与决策沉淀见独立文档：[architecture.md](docs/architecture.md) 与 [design_decisions.md](docs/design_decisions.md)。
+> 架构与决策沉淀见独立文档：[architecture.md](docs/architecture.md) 与 [design_decisions.md](docs/design_decisions.md)；21 天复刻学习计划见 [21天复写计划-API-Test-Agent.md](docs/21%E5%A4%A9%E5%A4%8D%E5%86%99%E8%AE%A1%E5%88%92-API-Test-Agent.md)（每天 3 条验收单测 + 3 个口头自检问题，吃透一条再写一条简历 bullet）。
 
 ---
 

@@ -1,1188 +1,553 @@
-# 21天复写计划：按当前项目一比一复写 API Test Agent
+# 21天复刻学习计划：从空目录一比一吃透 API Test Agent
 
-适合对象：
-
-- 你是小白或测开初学者
-- 你希望不是“看懂一点点”，而是能从 0 复写出一个能跑的项目
-- 你希望最后能把这个项目讲给面试官听，而不是只会运行命令
-
-这份计划是基于**当前仓库已经落地的真实项目结构**写的，不是泛泛而谈的学习提纲。  
-也就是说，你后面每天学到的内容，都能在这个仓库里找到对应文件。
+> 适用：想把这个项目写成校招简历核心项目、并扛住面试官三连问的人。  
+> 核心原则：**每天只学 1.5~2 小时；每天都有 3 条能跑通的验收单测；当天必须能用 5 分钟口头回答 3 个自检问题；吃透一条才写一条简历 bullet。**
 
 ---
 
-## 一、你最后要复写出来的到底是什么
+## 使用方法（重要，请先读这 7 条）
 
-这个项目不是“生成几个 pytest 文件”这么简单。  
-你要复写的是一套完整工具链：
-
-1. 输入一份 OpenAPI 文档
-2. 解析出接口信息
-3. 组合成 CRUD 测试场景
-4. 生成一套分层的 pytest 接口自动化工程
-5. 运行 pytest
-6. 如果失败，做失败分类
-7. 如果属于代码级 bug，就走 LLM 自愈修复
-8. 修完之后重新回归
-9. 修复成功后把经验记下来，下一次优先复用
-10. 同时支持命令行和 Streamlit 看板
-
-最终目标不是“你抄出一堆文件”，而是：
-
-- 你知道每个模块为什么存在
-- 你知道它们的输入输出是什么
-- 你能从空项目复写出来
-- 你能自己排查跑不通的问题
-- 你能在面试里讲清楚整条链路
+1. **新建一个干净目录**作为你的复刻仓库，例如 `api_test_agent_fork/`，不要直接在本仓库改；遇到写不下去再回本仓库看实现，看完删掉再手敲一遍。
+2. **每天不要跳阶段**：S0→S1→S2→S3→S4 顺序不能反；前一天的 3 条单测跑不通，就不要进入下一天。
+3. **每天结束做两件事**：① 独立跑「今天的 3 条验收单测」全部 pass；② 录一段 5 分钟语音，回答「当天 3 个口头自检问题」——答不出来就说明今天没吃透，花 15 分钟再看一遍代码和注释。
+4. **简历 bullet 只加已吃透的**：每天结束判断自己是否"能口头讲 3 分钟 + 被追问 3 层不卡壳"，能做到才去简历里加对应 1 条 bullet，没做到先不加。
+5. **不要主动说「AI 写了第一版」**：但面试如果问"你做项目踩过什么坑"，要能讲 1~2 个你复刻时亲踩的坑（例如"原子写在 Windows 同目录 replace 原子、跨目录不是原子；我加了目录检查"），这就是你的真实经历。
+6. **数字不要乱写**：如"修复成功率 72%→89%"，必须等 S4 你真的拿 30~50 个失败样本跑一遍算出来，再写进简历；没算之前写定性描述"显著降低误修率与知识库污染率"。
+7. **本仓库是"参考答案"，不是"抄的对象"**：你每天的目标是"我能在空目录里手写同样功能，并写出能证明它对的测试"，不是"我复制了一份能跑的"。
 
 ---
 
-## 二、当前项目真实结构总览
+## 五个阶段总览（21 天总地图）
 
-你现在仓库里的关键文件如下：
-
-### 1. 核心源码
-
-- `lang_agent/parser.py`
-- `lang_agent/scenario_builder.py`
-- `lang_agent/executor.py`
-- `lang_agent/report.py`
-- `lang_agent/config.py`
-
-### 2. 生成、自愈、提示词相关
-
-- `lang_agent/chains/generation_chain.py`
-- `lang_agent/chains/diagnosis_chain.py`
-- `lang_agent/chains/repair_chain.py`
-- `lang_agent/chains/prompts.py`
-- `lang_agent/chains/llm_factory.py`
-
-### 3. 记忆系统
-
-- `lang_agent/memory/short_memory.py`
-- `lang_agent/memory/long_memory.py`
-- `lang_agent/memory/retriever.py`
-
-### 4. LangGraph 编排层
-
-- `lang_agent/graph/nodes.py`
-- `lang_agent/graph/router.py`
-- `lang_agent/graph/runner.py`
-- `lang_agent/graph/state.py`
-
-### 5. 产品入口
-
-- `cli.py`
-- `app.py`
-
-### 6. 演示数据与演示服务
-
-- `data/petstore.yaml`
-- `mock_api_server.py`
-
-### 7. 自动生成产物目录
-
-- `generated_tests/`
-
-### 8. 项目自测
-
-- `tests/`
-
-你要始终分清楚两类东西：
-
-- **生成器本体**：`lang_agent/`、`cli.py`、`app.py`
-- **生成结果**：`generated_tests/`
-
-前者是“机器”，后者是“机器打出来的产品”。
+| 阶段                   | 天数    | 你会掌握什么                                                                                                   | 对应简历里能陆续新增几条 bullet              |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **S0 准备**            | D1~D3   | 环境 + 四层架构脑图 + 输入输出总览；会看 RunReport/HandoffReport                                               | （暂不加，先打底）                           |
+| **S1 工程底座**        | D4~D8   | config、signatures、utils（原子写+异常家族）、io/parser、io/executor、io/report                                | 2 条（底座 + 解析/执行/报告）                |
+| **S2 链 & 记忆**       | D9~D15  | scenario_builder、generation/diagnosis/repair 三条链、双层 memory + retriever、llm factory + prompts、AST 门控 | 2 条（双层记忆 RAG + 三层防御 + LLM 兜底）   |
+| **S3 LangGraph 编排**  | D16~D19 | state、nodes、router、runner、两张状态机图、异常兜底 handoff、置信度<0.7 handoff 门控                          | 2 条（状态机全链路 + 双层不误修）            |
+| **S4 入口 & 面试可讲** | D20~D21 | CLI、Streamlit、Skill 文档；13 自测全绿；1 分钟/3 分钟话术；评测集（可选）；把「吃透的」正式写进简历           | 加剩余 bullet，补齐"评测维度/技能封装"等表述 |
 
 ---
 
-## 三、复写这类项目的正确顺序
+# S0 · 准备（D1~D3）——先把"这项目在干啥"装进脑子里
 
-很多人会犯一个错误：  
-一上来就去写 LLM prompt、写 LangGraph、写自愈。
+## Day 1：项目全景 + 环境就绪
 
-这会非常乱。
+**学习目标**：能一句话讲清项目解决的痛点；能画出四层架构脑图；本地虚拟环境可用。
 
-正确顺序一定是：
+**你要做的事**：
 
-1. 先把“输入”和“执行环境”建好
-2. 再把“生成链路”跑通
-3. 再把“pytest 执行与错误收集”做好
-4. 最后再做“失败闭环、自愈、记忆”
-5. 最后再包装成 CLI / Streamlit
+1. 通读 README 的「背景 / 这个项目干了什么 / 功能特性 / 架构 / 快速开始」5 节。
+2. 通读 [architecture.md](architecture.md) §1~§4。
+3. 建立干净复刻目录，建虚拟环境并 `pip install -r requirements.txt`（从本仓库复制一份 requirements.txt 过去）。
+4. 在本仓库里运行一次 3 条命令，先看一眼真实产物：
+   - `python mock_api_server.py  `（另一个终端，跑在后台）
+   - `python cli.py generate -i data/petstore.yaml -o D:/tmp/fork_demo_generated`
+   - `python cli.py heal -t D:/tmp/fork_demo_generated` 后再 `python cli.py report` 看 RunReport
 
-你可以把整个项目理解成三阶段：
+**当天必跑的 3 条验收命令（空断言/能 print 也算过）**：
 
-### 阶段 A：先会生成
+1. `python -c "import yaml, requests, pytest; print('deps ok')"`
+2. 能 print 出 README 里四段分层架构（把架构图 ASCII 写进一个 txt，py 里读出来打印，保证你至少看过一遍）
+3. `python -m pytest tests -q`（在本仓库跑，先亲眼见过全绿 13 passed 是什么样）
 
-- 能解析 OpenAPI
-- 能生成测试工程
-- 能跑 pytest
+**口头自检 3 问（录 5 分钟语音）**：
+Q1：这个项目解决的两个核心痛点是什么？（答：接口用例写得慢 + 业务迭代后脚本维护贵）
+Q2：四层架构分别是什么？各自职责一句话。（答：入口层 / Harness 层 / 横切 io+llm+core 层 / 产物层）
+Q3："机器"和"生成结果"分别指哪些目录？（答：机器=lang_agent+cli+app；生成=generated_tests+output+reports）
 
-### 阶段 B：再会修复
-
-- 能拿到失败栈
-- 能分类失败
-- 能修复测试文件
-- 能重新回归
-
-### 阶段 C：最后变产品
-
-- 能命令行运行
-- 能看板运行
-- 能展示报告
-- 能给面试官讲清楚
-
-这就是 21 天计划的底层安排逻辑。
+**锚点文件**： [README.md](../README.md) §背景§特性§架构、[architecture.md](architecture.md) §1~§4。
 
 ---
 
-## 四、21天完整学习与复写计划
+## Day 2：认识核心数据对象（Endpoint / Settings / TestFailure / RunReport）
 
-下面是详细版。  
-每一天我都给你写了：
+**学习目标**：能不看文档说出 4 类核心对象的字段含义；能手动构造 1 个 Settings。
 
-- 今天目标
-- 为什么今天做这个
-- 你要读哪些文件
-- 你要做哪些动作
-- 你今天至少要产出什么
-- 你怎么判断自己完成了
-- 常见错误是什么
+**你要做的事（在 fork 目录里开始写代码）**：
 
----
+1. 新建 fork 里的 `lang_agent/core/__init__.py`，只写空文件；
+2. 复刻 `core/config.py`：先只写 4 个 `@dataclass`（ModelSettings/HealSettings/MemorySettings/Settings），`load_settings` 暂时不写，今天只要字段齐。
+3. 复刻 `io/parser.py` 里 `HttpMethod / Endpoint` dataclass（先不写 parse_openapi）。
+4. 复刻 `io/executor.py` 里 `TestFailure / PytestRunResult` dataclass。
+5. 复刻 `io/report.py` 里 3 个 dataclass（RepairHistoryEntry/RunReport/HealReport）和 save/load 函数（今天先写空函数 + docstring，明天补）。
 
-# 第1周：先把“生成链路”建立起来
+**当天必跑的 3 条验收单测（fork 目录里新建 `tests/day2_test.py`，用最小 unittest）**：
 
-这一周你先不要碰 LangGraph 和自愈。  
-你先把“输入 OpenAPI -> 生成 pytest 工程 -> 跑通测试”做出来。
+1. `test_settings_fields`：实例化一个 Settings，能 assert output_dir / model.name / heal.max_rounds 三个字段存在。
+2. `test_endpoint_fields`：实例化一个 Endpoint（method='get', path='/pets', operation_id='getPets'），assert endpoint.method + path。
+3. `test_report_dataclass_to_dict`：构造一个最简 RepairHistoryEntry（round=1, file='a.py', error_category='code_bug', error_type='AssertionError', error_signature='sig', short_memory_hit=False, long_memory_used=False, outcome='passed'），调用 `.to_dict()` 断言得到 dict。
 
----
+**口头自检 3 问**：
+Q1：为什么 Settings 要按 model/heal/memory 拆？（答：分层合并、CLI overrides 只改需要部分、多环境 yaml 好维护）
+Q2：PytestRunResult 为什么把 failures 单独列成 list，不只存 raw report？（答：后面 classify/build_signature 节点直接用，解耦报告格式升级）
+Q3：RunReport 为什么要 handoff_report / repair_history 两个字段？（答：handoff 给人看，repair_history 给记忆和复盘用）
 
-## Day 1：认识项目，搭好环境
-
-### 今天目标
-
-- 知道项目在解决什么问题
-- 能说清项目里“机器”和“生成结果”的区别
-- 本地开发环境可用
-
-### 为什么先做这个
-
-如果你连项目结构都没认清，后面每个文件都会看得很痛苦。
-
-### 今天重点理解
-
-这个项目一句话描述：
-
-> 根据 OpenAPI 自动生成接口测试工程，运行失败后再用 LLM 自愈修复。
-
-### 今天要读的文件
-
-- `README.md`
-- `requirements.txt`
-- `app.py`
-- `cli.py`
-
-### 今天要做的动作
-
-1. 看一遍仓库顶层目录
-2. 安装依赖
-3. 验证关键库能导入
-
-### 参考命令
-
-```bash
-python --version
-pip install -r requirements.txt
-python -c "import pytest, yaml, requests; print('ok')"
-python -c "import click, streamlit; print('ok')"
-```
-
-### 今天最小产出
-
-- 一张你自己的笔记：
-  - `lang_agent/` 是什么
-  - `generated_tests/` 是什么
-  - `mock_api_server.py` 是什么
-
-### 完成标准
-
-- 依赖安装成功
-- 你能口头说清楚项目主线
-
-### 常见错误
-
-- 虚拟环境没激活
-- pip 装错 Python 版本
+**锚点文件**：
+[core/config.py](../lang_agent/core/config.py)、
+[io/parser.py](../lang_agent/io/parser.py#L18-L29)、
+[io/executor.py](../lang_agent/io/executor.py#L21-L31)、
+[io/report.py](../lang_agent/io/report.py#L18-L53)。
 
 ---
 
-## Day 2：理解整个链路，不写代码也要讲明白
+## Day 3：把数据链路串起来（空实现版）
 
-### 今天目标
+**学习目标**：在 fork 目录里写出"最小可跑骨架"——即：解析 Endpoints → 生成假的 Output → 保存 RunReport。
 
-你能把整条链路用自己的话讲出来。
+**你要做的事**：
 
-### 为什么今天单独讲链路
+1. 写一个最小的 `io/parser.py`：`load_openapi_spec` 只用 `yaml.safe_load` 读 `data/petstore.yaml`，返回顶层 dict；`parse_openapi` 写 5 行硬编码返回一个写死的 list[Endpoint]（2~3 个 endpoint 就行，今天先不求真解析）。
+2. 写一个最小的 `generation_chain.py`：`generate_pytest_project` 不接 LLM，只 mkdir + `touch api/__init__.py / testcases/__init__.py / conftest.py / pytest.ini` 6 个空文件。
+3. 写一个最小的 `report.py save_run_report`：把 dict 写进 json，再 `load_run_report` 读回来。
+4. 写一个"0 状态机" `runner.py`：写 `run_generate_minimal()` 串起来：parse→generate→save_report，并跑一次。
 
-这是后面所有模块的地图。
+**当天 3 条验收单测（fork 目录 tests/day3）**：
 
-### 今天要读的文件
+1. `test_parse_openapi_returns_list`：断言写死的 parse 能得到 len>=2 的 list[Endpoint]。
+2. `test_generate_creates_conftest_and_pytest_ini`：generate 后 Path('conftest.py').exists() + Path('pytest.ini').exists()。
+3. `test_save_and_load_run_report`：save 再 load，断言 RunReport.mode 字段能 roundtrip。
 
-- `app.py`
-- `cli.py`
-- `lang_agent/graph/runner.py`
+**口头自检 3 问**：
+Q1：为什么今天可以用"写死的 Endpoints"照样跑最小链路？（答：调试分层的关键是先让上下游耦合变小，parser/generator/report 各自独立可测）
+Q2：为什么 generate 先只 mkdir + touch 6 个空文件？（答：分层骨架先对，内容后补）
+Q3：RunReport 为什么用 `json.dumps` + `indent=2 + ensure_ascii=False`？（答：中文可读，面试现场 cat 就能看）
 
-### 今天要做的动作
-
-把链路抄下来并理解：
-
-1. OpenAPI 输入
-2. parser 解析
-3. scenario_builder 场景构建
-4. generation_chain 生成测试工程
-5. executor 跑 pytest
-6. diagnosis 分类
-7. repair 修复
-8. memory 记忆
-9. report 报告
-10. app/cli 展示
-
-### 今天最小产出
-
-自己写 10 句话，每句只解释一个模块干什么。
-
-### 完成标准
-
-你能在不看文档的情况下，大致说出项目流程。
+**锚点文件**：
+[chains/generation_chain.py](../lang_agent/chains/generation_chain.py#L29-L59)、
+[io/report.py save_run_report](../lang_agent/io/report.py#L78-L82)。
 
 ---
 
-## Day 3：写 mock API，先让测试有地方打
+# S1 · 工程底座（D4~D8）——先把「不会被追工程化扣分」的地基打牢
 
-### 今天目标
+## Day 4：config.py 完整实现（yaml+env+CLI overrides 合并）
 
-- 知道为什么一定要有 mock 服务
-- 能写出最小 CRUD 服务
+**目标**：能写 `load_settings`，做到：默认 yaml + dotenv + CLI overrides 三层合并，且 CLI 优先级最高。
 
-### 为什么先写它
+**你要做**：
 
-因为没有后端服务，生成出来的测试根本没法验收。
+1. 复刻 `_deep_merge(base, override)`；
+2. 复刻 `load_dotenv(override=False)`；
+3. 复刻 `load_settings(config_path, overrides)`；加兼容 `os.getenv('OPENAI_MODEL')`；
 
-### 今天要读的文件
+**3 条验收单测**：
 
-- `mock_api_server.py`
-- `data/petstore.yaml`
+1. `test_default_yaml_loads`：加载 `config.yaml`，assert base_url 为 'http://localhost:8000'。
+2. `test_overrides_merge`：overrides={'heal':{'max_rounds':7}}，得到 Settings.heal.max_rounds==7。
+3. `test_pytest_args_str_convert`：raw yaml 里 pytest_args 是 [1, '2']，load_settings 后元素全是 str（[1, '2'] → ['1','2']）。
 
-### 今天要理解的概念
+**口头自检 3 问**：
+Q1：为什么 override 要 deep_merge，不是直接 dict.update？（答：model/heal/memory 是嵌套，浅 merge 会整层覆盖）
+Q2：为什么 load_dotenv(override=False)？（答：用户自己在 shell 里 export 的变量优先，不会被 .env 覆盖）
+Q3：为什么 OPENAI_API_KEY 不传进 Settings？（答：密钥不要进 dataclass，永远只从 env 读，避免序列化泄露）
 
-- `GET /pets`
-- `POST /pets`
-- `GET /pets/{petId}`
-- `PUT /pets/{petId}`
-- `DELETE /pets/{petId}`
-
-### 今天要做的动作
-
-1. 阅读 `mock_api_server.py`
-2. 看看它用什么方式存储“宠物数据”
-3. 理解每个接口的返回状态码
-4. 亲自启动它
-
-### 参考命令
-
-```bash
-python mock_api_server.py
-```
-
-新开一个终端测试：
-
-```bash
-python -c "import requests; print(requests.get('http://127.0.0.1:8000/pets').status_code)"
-```
-
-### 今天最小产出
-
-一张表：
-
-| 方法   | 路径          | 含义     | 成功状态码 |
-| ------ | ------------- | -------- | ---------- |
-| GET    | /pets         | 查询列表 | 200        |
-| POST   | /pets         | 创建宠物 | 201        |
-| GET    | /pets/{petId} | 查单个   | 200/404    |
-| PUT    | /pets/{petId} | 更新     | 200        |
-| DELETE | /pets/{petId} | 删除     | 204        |
-
-### 完成标准
-
-- mock 服务能启动
-- 你能成功访问一个接口
-
-### 常见错误
-
-- 8000 端口被占用
-- 服务没开就去跑测试
+**锚点文件**：[core/config.py load_settings](../lang_agent/core/config.py#L46-L79)。
 
 ---
 
-## Day 4：理解 OpenAPI 文档是怎么被程序“读懂”的
+## Day 5：signatures.py + utils.py 异常家族
 
-### 今天目标
+**目标**：能从真实失败日志抽出 error_type + 稳定错误签名；能自定义 5 类业务异常。
 
-- 明白 OpenAPI 不是“给人看的文档”，也是“给程序吃的输入”
-- 知道 parser 最终要抽取哪些字段
+**你要做**：
 
-### 今天要读的文件
+1. 复刻 `core/signatures.py` 两个函数；
+2. 复刻 `core/utils.py` `BaseSelfHealingError + 5 个子类`；
+3. 先不急着写 atomic_write_text（明天做）。
 
-- `data/petstore.yaml`
-- `lang_agent/parser.py`
-- `tests/test_parser.py`
+**3 条验收单测（给日志写死在 tests/fixtures 目录里一个 fake_traceback.txt）**：
 
-### 你今天要重点理解的字段
+1. `test_extract_assertion_error`：给一段 `AssertionError: Expected 200 but got 500`，断言 error_type 为 'AssertionError'。
+2. `test_error_signature_dedup_line_numbers_and_ptrs`：给两段"行号不同、错误相同"的日志，断言签名相同。
+3. `test_parser_error_to_dict`：构造 OpenAPIParserError(message, user_hint='hint', details={'path':'x'}), `.to_dict()` 包含三个字段。
 
-- `paths`
-- `method`
-- `operationId`
-- `parameters`
-- `requestBody`
-- `responses`
+**口头自检 3 问**：
+Q1：signatures 为什么只取尾部 20 行？（答：错误根因通常在最后）
+Q2：为什么把数字和 0x 指针替换成占位符？（答：去掉不稳定信息，命中短期记忆概率才高）
+Q3：BaseSelfHealingError 的 user_hint 和 details 有什么区别？（答：hint 给最终用户看一句话怎么做；details 是结构化字段用于 handoff_report）
 
-### 今天要做的动作
-
-1. 读 `petstore.yaml`
-2. 手动写出一个接口的结构
-3. 再去看 `parser.py`，看看代码是不是在抽这些信息
-
-### 今天最小产出
-
-你自己写一个“Endpoint 长什么样”的伪结构，例如：
-
-```python
-Endpoint(
-    method="get",
-    path="/pets/{petId}",
-    operation_id="getPet",
-    parameters=[...],
-    request_schema={...},
-    responses={...},
-)
-```
-
-### 完成标准
-
-你能说清 `parser.py` 的输入和输出。
+**锚点文件**：[core/signatures.py](../lang_agent/core/signatures.py)、[core/utils.py 异常家族](../lang_agent/core/utils.py#L9-L40)。
 
 ---
 
-## Day 5：自己复写 Endpoint 和 parse_openapi
+## Day 6：原子写 atomic_write_text（今天你面试里的"文件崩溃怎么恢复"就靠它）
 
-### 今天目标
+**目标**：能实现并测出原子写的 3 种场景——正常写、写失败保留旧文件、父目录不存在。
 
-- 自己动手写一个简化版 OpenAPI 解析器
+**你要做**：完整复刻 atomic_write_text（mkstemp→write→fsync→os.replace→异常清 tmp）。
 
-### 今天要读的文件
+**3 条验收单测（今天的核心，必须全过）**：
 
-- `lang_agent/parser.py`
-- `tests/test_parser.py`
+1. `test_atomic_write_normal`：写入新内容后，读回与写入一致。
+2. `test_atomic_write_failure_keeps_old`：先写 old，再 monkeypatch `builtins.open` 在写 tmp 时抛 OSError，断言文件内容仍是 old，tmp 不存在。
+3. `test_atomic_write_creates_parent_dir`：写入 `a/b/c/new.txt`，父目录自动创建且文件存在。
 
-### 今天要做的动作
+**口头自检 3 问**：
+Q1：为什么 fsync 之后再 os.replace？（答：确保磁盘真的写了再替换，不是 OS 缓存）
+Q2：为什么 os.replace 而不是先删再 rename？（答：Windows/Posix 同目录下 replace 对已有文件直接替换；先删再 rename 中间态会丢旧文件）
+Q3：什么时候 atomic_write_text 不是原子？（答：跨卷 replace 不是原子；所以我默认写同目录）
 
-1. 先自己写，不看原文件
-2. 定义 `Endpoint`
-3. 写一个简版 `parse_openapi`
-4. 再和项目现有实现对照
-
-### 你今天最少要写出来的能力
-
-- 读 yaml
-- 遍历 `paths`
-- 提取 method/path/operationId/responses
-
-### 验收命令
-
-```bash
-pytest tests/test_parser.py -q
-```
-
-### 完成标准
-
-- 单测通过
-- 你知道为什么 parser 要做 fallback（例如 prance 依赖问题时还能读 yaml）
-
-### 常见错误
-
-- 忘记处理 `requestBody`
-- 忘记处理 `parameters`
-- 把 `responses` 读丢了
+**锚点文件**：[core/utils.py atomic_write_text](../lang_agent/core/utils.py#L43-L73)。
+**对照本仓库 tests**：[test_utils_robustness.py](../tests/test_utils_robustness.py#L19-L81)。
 
 ---
 
-## Day 6：场景构建器，理解为什么不能只按单接口生成测试
+## Day 7：io/parser.py 真实解析 + 兼容 Prance 缺失
 
-### 今天目标
+**目标**：petstore.yaml → 真实 list[Endpoint]（而不是昨天的硬编码）。
 
-- 理解 Scenario 的作用
-- 自己能写一个简化版 `build_scenarios`
+**你要做**：完整复刻 parse_openapi；try import prance；prance 不可用则走 yaml fallback。
 
-### 今天要读的文件
+**3 条验收单测**：
 
-- `lang_agent/scenario_builder.py`
+1. `test_petstore_yields_more_than_10_endpoints`：len(parse('data/petstore.yaml')) >= 10。
+2. `test_endpoints_have_operation_ids`：所有 endpoint.operation_id 非空。
+3. `test_missing_file_raises_parser_error`：parse('does_not_exist.yaml') 抛 OpenAPIParserError 且 details 里含 path。
 
-### 为什么这一步重要
+**口头自检 3 问**：
+Q1：为什么 prance 失败就 fallback 纯 yaml？（答：无网络/缺第三方库依旧能跑 MVP，符合 ADR-05 兜底）
+Q2：operation_id 缺失时为什么自己拼？（答：后面生成 api 层函数名必须稳定）
+Q3：为什么 parameters 合并 path-level 和 operation-level 两份？（答：OpenAPI 规范允许，漏合并则生成的 path parameter 缺失）
 
-因为接口自动化不是只测一个 GET，而是测试“先创建、再查询、再更新、再删除”的链路。
-
-### 今天要做的动作
-
-1. 看 `Scenario` 数据结构
-2. 理解 resource 是怎么来的
-3. 理解同一资源下多个接口为什么要组合成 CRUD 场景
-
-### 今天最小产出
-
-你要能解释这三个概念：
-
-- Endpoint：单个接口
-- Scenario：一组接口组成的测试场景
-- Resource：这些接口属于哪个资源
-
-### 完成标准
-
-你能回答：
-
-> 为什么不能只根据 operationId 一股脑生成 test 文件？
-
-标准答案方向：
-
-- 因为很多接口有依赖
-- 没有前置数据会 404
-- 场景化更接近真实业务链路
+**锚点文件**：[io/parser.py parse_openapi](../lang_agent/io/parser.py#L53-L132)。
 
 ---
 
-## Day 7：生成分层测试工程骨架
+## Day 8：io/executor.py + io/report.py 真实 save/load
 
-### 今天目标
+**目标**：不跑 LLM，也能：写一个故意失败的 test\_\*.py → subprocess 跑 pytest → 拿到 failures 列表 → 落盘 RunReport 能读回。
 
-- 理解“分层 pytest 工程”到底指什么
-- 自己写出 scaffold 逻辑
+**你要做**：
 
-### 今天要读的文件
+1. 完整复刻 run_pytest（subprocess + json-report + failures 解析 + 非 0/1 抛 TestRunnerError）；
+2. 完整复刻 save_run_report / load_run_report。
 
-- `lang_agent/chains/generation_chain.py`
-- `generated_tests/` 当前目录结构
+**3 条验收单测**：
 
-### 今天重点理解的目录
+1. `test_run_pytest_exit_0_collects_0_failures`：写一个 `pass` testcase，run 后 exit_code=0，failures 为空。
+2. `test_run_pytest_exit_1_collects_assertion_failure`：写一个 `assert 1==2`，failures 里含 AssertionError。
+3. `test_test_runner_error_on_invalid_exit_code`：伪造 exit_code=2（pytest 正常是 0/1），要触发抛 TestRunnerError。
 
-```text
-generated_tests/
-├── api/
-├── config/
-├── data/
-├── reports/
-├── testcases/
-├── utils/
-├── conftest.py
-└── pytest.ini
-```
+**口头自检 3 问**：
+Q1：为什么用 `sys.executable -m pytest` 而不是 `pytest`？（答：保证子进程用的就是当前 venv 的解释器，不会用错全局 pytest 缺依赖）
+Q2：为什么 exit_code 不在 {0,1} 且 report 为空才抛？（答：pytest 内部崩溃、收集错误可能 exit_code=2/4/5，这时不能当"失败"要当"执行环境问题"）
+Q3：为什么 failures 自己拼 nodeid/file/call_longrepr 三个字段？（答：后面 classify 节点只依赖这三个，格式升级 json-report 也不影响）
 
-### 为什么这样分层
-
-- `api/`：接口动作封装
-- `testcases/`：测试逻辑
-- `utils/`：公共工具
-- `data/`：测试数据
-- `config/`：生成工程自己的配置
-- `conftest.py`：fixture
-- `pytest.ini`：pytest 规则
-
-### 今天要做的动作
-
-1. 看 `_scaffold_files`
-2. 看它写了哪些公共文件
-3. 自己手写一个最小 scaffold
-
-### 完成标准
-
-你能自己回答：
-
-> 为什么用例里不应该直接写 requests，而要经过 api 层？
+**锚点文件**：[io/executor.py run_pytest](../lang_agent/io/executor.py#L33-L102)、[io/report.py save/load](../lang_agent/io/report.py#L78-L91)。
 
 ---
 
-# 第2周：把“生成结果能真正跑起来”
+# S2 · Chains & Memory（D9~D15）——把「AI 怎么想 + 记住什么」写出来
 
-这一周重点是：  
-不只是生成目录，而是生成出来的东西要能执行。
+## Day 9：scenario_builder.py（Endpoint 按资源分组 + CRUD 链 + 单接口场景）
 
----
+**目标**：Endpoints 入，Scenarios 出；每个资源至少 1 条 CRUD + N 条单接口。
 
-## Day 8：理解 `api/` 层是怎么生成的
+**你要做**：完整复刻 build_scenarios + Scenario dataclass。
 
-### 今天目标
+**3 条验收单测**：
 
-- 明白接口封装层的价值
-- 理解 `pets_api.py` 这种文件是怎么来的
+1. `test_petstore_generates_pet_crud_scenario`：scenarios 里出现 'pet_crud'（按 tag 聚合的资源）。
+2. `test_each_endpoint_has_single_scenario`：每个 endpoint operation_id 至少对应一个 scenario。
+3. `test_crud_contains_at_least_post_and_get`：pet_crud scenario.endpoints 里 method 同时有 post/get。
 
-### 今天要读的文件
+**口头自检 3 问**：
+Q1：为什么要同时有 CRUD 场景 + 单接口场景？（答：CRUD 才体现业务链路一致性；单接口覆盖边界 case）
+Q2：为什么资源 key 默认 endpoint.tags[0]？（答：真实 OpenAPI 通常已分组，比我自己拼 path 稳）
+Q3：CRUD 链里固定顺序 post→get→put→delete 为什么？（答：最贴近"创建-查询-修改-删除"的真实使用顺序，便于传依赖 ID）
 
-- `generated_tests/api/pets_api.py`
-- `lang_agent/chains/generation_chain.py`
-
-### 今天重点理解
-
-为什么要生成：
-
-- `create_pet(...)`
-- `get_pet(...)`
-- `update_pet(...)`
-- `delete_pet(...)`
-- `list_pets(...)`
-
-### 今天完成标准
-
-你能讲清楚：
-
-> `api/` 层的作用不是“多写一层代码”，而是为了让 testcases 更干净、后续更好维护。
+**锚点文件**：[chains/scenario_builder.py](../lang_agent/chains/scenario_builder.py)。
 
 ---
 
-## Day 9：理解 `utils/` 层和 `conftest.py`
+## Day 10：llm factory + 三条 prompts
 
-### 今天目标
+**目标**：在缺 OPENAI_API_KEY 时 `build_chat_llm` 返回 None（不崩）；三条 prompt 都能拼出字符串。
 
-- 知道 fixture 是怎么给测试注入公共能力的
-- 知道 utils 为什么要拆出来
+**你要做**：复刻 llm/factory.py（build_chat_llm + build_embeddings）+ llm/prompts.py（generation/diagnosis/repair）。
 
-### 今天要读的文件
+**3 条验收单测（今天的重点是"不崩"）**：
 
-- `generated_tests/utils/http_client.py`
-- `generated_tests/utils/assertions.py`
-- `generated_tests/utils/data_loader.py`
-- `generated_tests/conftest.py`
+1. `test_build_llm_returns_none_without_api_key`：临时 unset OPENAI_API_KEY，断言 `build_chat_llm(ModelSettings(...)) is None`。
+2. `test_diagnosis_prompt_contains_json_fields`：生成 prompt 字符串，包含 error_category / confidence / actionable_hint 三个词。
+3. `test_repair_prompt_contains_few_shot`：传入 2 条 example，断言 prompt 里 example 原文至少各出现 1 次。
 
-### 今天要理解
+**口头自检 3 问**：
+Q1：为什么 build_embeddings 遇到 DeepSeek base_url 且没单独配 EMBEDDING_BASE_URL 时返回 None？（答：当前 DeepSeek 没有稳定 embedding；不自动降级就会在 long_memory 构造时崩，违背 ADR-05）
+Q2：为什么 diagnosis prompt 明确要求 JSON？（答：router/nodes 要按字段取，结构化才能接门控）
+Q3：为什么 generation_prompt 明确要求"只输出 Python 代码不要 markdown"？（答：防 LLM 包 `python` 导致我写盘后是带 markdown 的坏 py）
 
-- `base_url`
-- `request_session`
-- `load_resource_data`
-- `assert_response_ok`
-
-### 完成标准
-
-你能说出：
-
-- `conftest.py` 负责什么
-- `utils/` 负责什么
-- 为什么不能把这些逻辑全塞进测试文件
+**锚点文件**：[llm/factory.py](../lang_agent/llm/factory.py)、[llm/prompts.py](../lang_agent/llm/prompts.py)。
 
 ---
 
-## Day 10：理解测试用例模板是怎么生成的
+## Day 11：generation_chain 真实可跑（模板版 + LLM 可选）
 
-### 今天目标
+**目标**：无 LLM 时，调用生成链也能产出一个最小可运行的分层工程，`pytest generated` 能收集到用例（不要求 passed，能收集到 test function 存在即可）。
 
-- 明白生成出来的 `test_pets_crud.py` 为什么能跑
+**你要做**：完整复刻 generate_pytest_project（scaffold_api_module/scaffold_utils / write_data_file / \_template_testcase_code / \_llm_testcase_code）。
 
-### 今天要读的文件
+**3 条验收单测（今天的核心）**：
 
-- `generated_tests/testcases/test_pets_crud.py`
-- `generated_tests/testcases/test_pets_get_pet.py`
-- `lang_agent/chains/generation_chain.py`
+1. `test_generates_at_least_one_py_in_testcases`：generate 后 `output/testcases/` 目录至少有 1 个 `test_*.py`。
+2. `test_pytest_collection_passes`：生成后 `run_pytest(output, ['--collect-only', '-q'], report)` 收集到的 tests 数 > 0。
+3. `test_conftest_exposes_base_url_fixture`：打开生成的 `output/conftest.py`，字符串 `def base_url` 存在。
 
-### 今天重点理解
+**口头自检 3 问**：
+Q1：为什么生成 api 层独立模块，不在 test*\*.py 直接写 requests？（答：接口升级只要改 api 层，测试层复用）
+Q2：为什么 test*\*.py 要固定用 utils.assertions / data_loader？（答：断言风格、加载种子数据的方式统一）
+Q3：为什么所有文件写入都走 atomic_write_text？（答：生成中途 Ctrl+C 不把半写 py 文件留在磁盘）
 
-- 为什么 GET/PUT/DELETE 之前有时需要 bootstrap create
-- 为什么要自动造唯一 name/title
-- 为什么 path_params 要动态更新
-
-### 完成标准
-
-你能自己解释：
-
-> 为什么单独测 get_pet 时，不能假设 petId=1 一定存在？
+**锚点文件**：[chains/generation_chain.py](../lang_agent/chains/generation_chain.py#L60-L211)。
 
 ---
 
-## Day 11：让生成出来的测试真正跑一次
+## Day 12：diagnosis_chain 三类诊断 + 置信度 + heuristic 兜底
 
-### 今天目标
+**目标**：给一段失败日志，无论 LLM 是否可用，都能得到 7 字段 Diagnosis JSON。
 
-- 自己完成一次“启动 mock -> 跑 generated_tests”
+**你要做**：完整复刻 diagnosis_chain.py（Diagnosis dataclass + diagnose + \_heuristic_category + \_parse_diagnosis_json）。
 
-### 今天要做的动作
+**3 条验收单测**：
 
-1. 启动 mock
-2. 运行 pytest
-3. 看测试通过
+1. `test_heuristic_connection_error_becomes_env_bug`：给一段 "ConnectionRefused localhost:8000" 的日志，不接 LLM，返回 diagnosis.category='env_bug'、confidence≈0.55。
+2. `test_heuristic_assertion_becomes_code_bug`：给一段 AssertionError 日志，返回 code_bug，confidence=0.55。
+3. `test_parse_diagnosis_ignores_extra_fields`：构造一个带多余字段 xxx 的 JSON 字符串，parse 后仍合法（字段只取我们需要的 7 个）。
 
-### 参考命令
+**口头自检 3 问**：
+Q1：为什么 heuristic confidence 固定 0.55？（答：既不会被 0.7 门控误伤，也明确告诉上层"我是猜的"）
+Q2：为什么 action_hint 必须是一句人话？（答：handoff 时直接给用户看，不需要再解包）
+Q3：为什么 reasons 是数组而不是一句话？（答：给面试官、SDET 自己看能知道分类依据）
 
-```bash
-python mock_api_server.py
-python -m pytest generated_tests -q
-```
-
-### 完成标准
-
-- 你知道“生成”和“执行”是两件不同的事
-- 你知道为什么 mock 没开时会报 localhost:8000 连接失败
+**锚点文件**：[chains/diagnosis_chain.py](../lang_agent/chains/diagnosis_chain.py#L23-L163)。
 
 ---
 
-## Day 12：写 pytest 执行器
+## Day 13：repair_chain AST 门控三件套（今天的面试"AI 乱修怎么办"标准答案）
 
-### 今天目标
+**目标**：能在不接 LLM 时，写出 `_validate_repaired_code` 检测 3 类坏修复，并测试通过。
 
-- 让程序自己跑 pytest，而不是靠人手动观察终端
+**你要做**：完整复刻 \_validate_repaired_code / \_count_asserts / \_contains_def_test / \_compile_without_syntax_error / repair_prompt（今天不写 repair_test_file 的 LLM 调，只写 AST 门控 + apply_repair_to_file 原子写）。
 
-### 今天要读的文件
+**3 条验收单测（今天必须全过）**：
 
-- `lang_agent/executor.py`
+1. `test_validate_blocks_assertion_weakening`：原 3 个 assert 修后 1 个 assert → 抛 RepairGateBlockedError。
+2. `test_validate_blocks_missing_def_test`：修后文件里没有 `def test_` → 抛 RepairGateBlockedError。
+3. `test_validate_blocks_syntax_error`：修后文件有语法错（写一个 `return if:` 之类）→ 抛 SyntaxError。
 
-### 今天要理解
+**口头自检 3 问**：
+Q1：为什么断言削弱是红线？（答：LLM 最容易走的捷径就是把 assert 删掉或改得永远 True，表面"修复"，实则丢了质量）
+Q2：为什么只拦"3 件事"不拦更多？（答：低误杀原则；门控过严会把本来能修的也拦掉，handoff 太多就显得 Agent 没用）
+Q3：为什么 apply_repair_to_file 要先 validate 再 atomic_write？（答：先保证修好才允许替换旧文件，磁盘上永远是上一次好的或这次好的）
 
-- 为什么用 `--json-report`
-- 为什么要提取 `nodeid/file/call_longrepr`
-
-### 完成标准
-
-你能说清 executor 的输入输出：
-
-- 输入：test_path、pytest_args、report_path
-- 输出：exit_code、stdout、stderr、failures
+**锚点文件**：[chains/repair_chain.py \_validate_repaired_code](../lang_agent/chains/repair_chain.py#L38-L104)。
 
 ---
 
-## Day 13：统一报告结构
+## Day 14：双层记忆 short_memory + long_memory（validated-only）
 
-### 今天目标
+**目标**：short 写了下次能 0 LLM 命中；long 只有 validated=True 才写。
 
-- 知道为什么 app 和 cli 都读同一份报告
+**你要做**：
 
-### 今天要读的文件
+1. 复刻 short_memory.py（ShortMemory：KV save/lookup + file::signature 键）；
+2. 复刻 long_memory.py（LongMemory：构造函数 build_embeddings 为 None 时 no-op；`add_validated_fix` / `search`）；
 
-- `lang_agent/report.py`
-- `.cache/latest_run_report.json`
+**3 条验收单测**：
 
-### 今天要理解
+1. `test_short_memory_roundtrip`：`save(same file::sig, code)` 再 `lookup`，返回与写入一致。
+2. `test_long_memory_disabled_when_embeddings_none`：没 EMBEDDING_API_KEY 时，LongMemory().add_validated_fix(...) 不抛异常（no-op）。
+3. `test_long_memory_filters_validated_true_in_metadata`：如果你本地装了 chroma + 有 embedding key，search 只返回 validated=True 的。
 
-报告至少要包含：
+**口头自检 3 问**：
+Q1：为什么 short 记忆键是 `current_file::error_signature`？（答：同一个文件的同一个错误才敢直接复用，跨文件风险高）
+Q2：为什么长期记忆只有 retest passed + 非 short hit 才写？（答：ADR-03 validated-only，防止"删断言过的修复"污染知识库）
+Q3：为什么 long_memory.search 要"先 embedding 再 signature 重排"？（答：embedding 抓语义近的；signature 再推字面上完全同类的到最前）
 
-- 是否通过
-- 修复轮次
-- 停止原因
-- 当前失败文件
-- 修复历史
-
-### 完成标准
-
-你能解释为什么“没有统一报告结构，UI 和 CLI 会各写各的，非常乱”。
+**锚点文件**：[memory/short_memory.py](../lang_agent/memory/short_memory.py)、[memory/long_memory.py](../lang_agent/memory/long_memory.py)。
 
 ---
 
-## Day 14：把 Generate 流程完整串起来
+## Day 15：retriever.py + 把 diagnose/short/long/repair 链的组合在一个脚本里跑通（不用状态机）
 
-### 今天目标
+**目标**：给一段 failure，先查 short（命中就直接用，跳过 LLM），未命中查 long（few-shot），调用 repair（门控），原子写回文件。
 
-- 知道 `run_generate` 到底干了什么
+**你要做**：
 
-### 今天要读的文件
+1. 复刻 retriever.py（`retrieve_few_shot_examples` 统调 short + long 记忆）；
+2. 在 fork 里写一个 `notebooks/day15_e2e_heal_mini.py` 串：
+   → 生成一个故意失败的 `assert 1==2` 小文件
+   → diagnose
+   → retrieve 0 条
+   → 用模板化的 repair 代码（assert 1==1）修回来
+   → validate + atomic_write
+   → retest passed
 
-- `lang_agent/graph/runner.py`
-- `lang_agent/graph/nodes.py`
+**3 条验收单测**：
 
-### 今天要理解
+1. `test_retriever_short_hit_skips_llm`：short 提前 save 后，retrieve 返回命中，函数能区分"short_hit=True"。
+2. `test_e2e_mini_passes_retest`：上面脚本跑完后 exit_code==0。
+3. `test_e2e_mini_does_not_write_if_gate_blocks`：模板化修后故意只有 0 个 assert，门控拦截且磁盘文件仍是旧的 assert 1==2。
 
-Generate 图大致就是：
+**口头自检 3 问**：
+Q1：为什么"short 命中"要和 long_memory_used 区分开记到 RepairHistoryEntry？（答：RunReport 统计"0-LLM 命中率"是非常亮眼的指标）
+Q2：为什么 few-shot 最多 2~3 条？（答：再多上下文就太长，LLM 费用高且慢）
+Q3：今天串 heal 小闭环和明天 LangGraph 编排的区别是什么？（答：今天是手写 if/while；明天是把每一步变成独立节点，方便 trace + 画图 + 加熔断边）
 
-- parse_openapi
-- build_scenarios
-- generate_tests
-- final_report
-
-### 完成标准
-
-你能用一句话讲清：
-
-> run_generate 不是“直接写文件”，而是通过图把解析、场景构建、生成和报告串起来。
-
----
-
-# 第3周：进入“失败闭环、自愈、产品化”
-
-这一周是项目最有亮点的部分。
+**锚点文件**：[memory/retriever.py](../lang_agent/memory/retriever.py)、[graph/nodes.py 修复相关节点](../lang_agent/graph/nodes.py#L143-L283)。
 
 ---
 
-## Day 15：理解失败分类为什么是自愈前提
+# S3 · LangGraph 编排（D16~D19）——把"流程"变"可追溯状态机"
 
-### 今天目标
+## Day 16：state.py + router.py（4 个路由函数 + 置信度<0.7 handoff 门控）
 
-- 知道为什么不是所有失败都该让 LLM 修
+**目标**：能手写 AgentState（TypedDict）所有字段；能单元测 4 个路由判断分支。
 
-### 今天要读的文件
+**你要做**：
 
-- `lang_agent/chains/diagnosis_chain.py`
-- `lang_agent/chains/prompts.py`
+1. 复刻 state.py AgentState TypedDict；
+2. 复刻 router.py（route_after_test_run / route_after_classification / route_after_short_lookup / route_after_retest）。
 
-### 今天重点理解三类错误
+**3 条验收单测（对照本仓库 tests/test_router.py）**：
 
-- `code_bug`
-- `api_bug`
-- `env_bug`
+1. `test_route_classification_confidence_gate`：code_bug + confidence=0.69 → 'handoff'；0.9 → 'build_signature'。
+2. `test_route_after_retest_passed`：retest exit=0 → 'persist_memory'。
+3. `test_route_after_test_run_errored`：pytest exit=4 或 5 → 'handoff'。
 
-### 今天完成标准
+**口头自检 3 问**：
+Q1：为什么用 TypedDict 不 dataclass？（答：LangGraph 每个节点会 mutate dict 里字段，TD 天然兼容；dataclass 要 to_dict/from_dict 麻烦）
+Q2：为什么缺省 confidence 也要放行 code_bug？（答：兼容历史 state 可能没 confidence 字段；别让用户升级后跑不动）
+Q3：为什么 max_rounds 熔断放在 router 里？（答：熔断是"路由决策"——决定下一步去哪，而不是"节点动作"）
 
-你能解释：
-
-> 为什么“服务没启动”不应该交给 LLM 去修测试代码？
-
----
-
-## Day 16：理解修复链怎么工作
-
-### 今天目标
-
-- 知道 repair chain 输入什么、输出什么
-
-### 今天要读的文件
-
-- `lang_agent/chains/repair_chain.py`
-- `lang_agent/chains/prompts.py`
-
-### 今天重点理解
-
-修复输入：
-
-- 原始失败文件
-- 错误日志
-- 错误类型
-- 错误摘要
-- few-shot 历史修复示例
-
-修复输出：
-
-- 修复后的完整文件内容
-
-### 完成标准
-
-你能回答：
-
-> 为什么修复链输出的是完整文件，而不是 patch 片段？
+**锚点文件**：[graph/state.py](../lang_agent/graph/state.py)、[graph/router.py](../lang_agent/graph/router.py)、[tests/test_router.py](../tests/test_router.py#L33-L46)。
 
 ---
 
-## Day 17：理解短期记忆
+## Day 17：nodes.py 先写 Generate 图 4 节点 + final_report_node
 
-### 今天目标
+**目标**：不接 LangGraph，你也能手动按顺序 `parse_openapi_node→build_scenarios_node→generate_project_node→final_report_node` 调用，得到一个合法 RunReport。
 
-- 知道短期记忆为什么能省钱、省时间
+**你要做**：复刻 nodes.py 中 parse / build_scenarios / generate_project / final_report_node 四个节点实现（注意 import 路径要对 fork 目录）。
 
-### 今天要读的文件
+**3 条验收单测**：
 
-- `lang_agent/memory/short_memory.py`
+1. `test_parse_node_populates_endpoints`：state 在 parse 后 'endpoints' 非空。
+2. `test_generate_project_node_populates_generated_files`：state['generated_files'] len>0。
+3. `test_final_report_node_returns_report`：state 包含 'run_report_path'，且 load_run_report 能读回 dict。
 
-### 今天要理解
+**口头自检 3 问**：
+Q1：为什么每个节点返回一个 dict（增量字段）而不是直接改 state？（答：LangGraph 会自动把返回 dict merge 到 state；风格统一，方便单测每个节点输出）
+Q2：为什么 final_report_node 同时写 report_path 和 state 里的字段？（答：路径给 CLI/UI 读；state 给图后续边用——虽然 Generate 后面没边了，但保持一致）
+Q3：为什么在生成链任何异常会被 runner 捕获 handoff？今天你手工测一下节点抛错，手写 catch 后写 handoff。（答：用户不会看到堆栈，只会看到结构化提示 + actionable_hint）
 
-key 设计：
-
-- `current_file::error_signature`
-
-### 完成标准
-
-你能解释：
-
-> 为什么同一个文件、同一个错误签名，第二次没必要再问大模型？
+**锚点文件**：[graph/nodes.py](../lang_agent/graph/nodes.py#L38-L140)。
 
 ---
 
-## Day 18：理解长期记忆和 ChromaDB
+## Day 18：nodes.py 写 Heal 图 12 节点 + runner.\_build_handoff_from_exception
 
-### 今天目标
+**目标**：Heal 图的每个节点单测跑通（输入 state 子集，输出正确字段）。重点：build_signature_node、lookup_short_node、retrieve_long_node、repair_code_node、apply_fix_node、retest_node、persist_memory_node、build_handoff_report_node。
 
-- 明白长期记忆为什么只保存“验证通过”的修复
+**你要做**：完整复刻 heal 图所有节点 + 手写 runner.\_build_handoff_from_exception（接受任意 BaseSelfHealingError，写 RunReport 含 handoff_report dict）。
 
-### 今天要读的文件
+**3 条验收单测**：
 
-- `lang_agent/memory/long_memory.py`
-- `lang_agent/memory/retriever.py`
-- `tests/test_long_memory.py`
+1. `test_build_signature_node_writes_signature`：给一段 call_longrepr，state 填好 current_file + failures[0]，build_signature 后 state.error_signature 非空。
+2. `test_persist_memory_skipped_if_short_hit`：short_memory_hit=True 时，persist_memory_node 不调 long_memory.add_validated_fix（你 mock long_memory 观察没调用）。
+3. `test_handoff_from_exception_writes_report`：抛一个 OpenAPIParserError，\_build_handoff_from_exception 后 load_run_report 读到 handoff_report.type == 'OpenAPIParserError'。
 
-### 今天要重点理解
+**口头自检 3 问**：
+Q1：为什么 retest 节点失败后回到 run_tests 而不是 classify？（答：每轮 retest 后可能还有其它文件失败，必须重新全量收集 + 重新 pick_failure）
+Q2：为什么 repair_code_node 要同时接 LLM 和 short_memory code？（答：short 命中就别调用 LLM，省钱省时间）
+Q3：为什么 build_handoff_report 节点要把 actionable_hint 放在最显眼的字段？（答：handoff 的目的是让人上手修，不是给机器读）
 
-- 为什么要 `validated=True`
-- 为什么 retrieval 需要 `error_type` 和 `error_signature`
-- 为什么 DeepSeek-only 场景下要允许 embedding 降级
-
-### 完成标准
-
-你能解释：
-
-> 如果把错误修复也写进长期记忆，会发生什么问题？
+**锚点文件**：[graph/nodes.py Heal 节点](../lang_agent/graph/nodes.py#L143-L285)、[graph/runner.py \_build_handoff_from_exception](../lang_agent/graph/runner.py#L136-L194)。
 
 ---
 
-## Day 19：理解 Heal 图如何串起整个闭环
+## Day 19：runner.py 两张 StateGraph 编译 + 实际 invoke 跑通 Generate 和 Heal
 
-### 今天目标
+**目标**：在 fork 目录里真的 import langgraph，`StateGraph().add_node/add_edge/compile()` 两张图，然后：
 
-- 明白自愈并不是一个函数，而是一张状态图
+- run_generate(settings) 成功写 RunReport；
+- run_heal(settings, tests_path) ① 先跑 pass 的工程 → ok=True ② 故意改 test 失败 → heal rounds 走至少一轮。
 
-### 今天要读的文件
+**你要做**：完整复刻 runner.py `_compile_generate_graph / _compile_heal_graph / run_generate / run_heal`。
 
-- `lang_agent/graph/nodes.py`
-- `lang_agent/graph/router.py`
-- `lang_agent/graph/state.py`
+**3 条验收单测（今天里程碑）**：
 
-### 今天要理解的节点顺序
+1. `test_run_generate_generates_report`：调用 run_generate，run_report_path 指向的 json 文件存在且 ok=True。
+2. `test_run_heal_on_pass_is_noop`：给一个 100% passed 的工程，run_heal rounds=0，ok=True，no repair。
+3. `test_run_heal_on_code_bug_reaches_round_1`：给一个故意 `assert 1==2` 的工程 + low-confidence 兜底（confidence=0.55），断言最终 stopped_reason='handoff_classification_confidence'。
 
-- run_tests
-- collect_failures
-- pick_failure
-- classify_failure
-- lookup_short_memory
-- retrieve_long_memory
-- repair_code
-- apply_fix
-- retest
-- persist_memory
-- final_report
+**口头自检 3 问**：
+Q1：为什么图里 START / END 节点要显式加？（答：LangGraph 规范，不加没法确定入口；多个入口容易造成调试混乱）
+Q2：为什么 compile() 调用后才允许 invoke？（答：编译后做了一些拓扑检查，能提前发现缺边缺节点）
+Q3：为什么 healgraph 里加专门的 handoff 边而不是"节点里 return END"？（答：handoff 是"路径终点"，以后加 LangSmith trace 会单独标出来，统计 handoff 率才准确）
 
-### 完成标准
-
-你能画出一张简单流程图。
+**锚点文件**：[graph/runner.py](../lang_agent/graph/runner.py)。
 
 ---
 
-## Day 20：CLI 和 Streamlit 为什么都要做
+# S4 · 入口 + 简历可讲（D20~D21）——交付给"非你本人"也能使用，然后正式写简历 bullet
 
-### 今天目标
+## Day 20：CLI 三条命令 + Streamlit 最小版 + Skill 说明文档
 
-- 理解“工程能力”和“产品展示能力”的区别
+**目标**：别人 clone 下你 fork 仓库，看 README 就能跑通 `generate / heal / report` 三条命令。
 
-### 今天要读的文件
+**你要做**：
 
-- `cli.py`
-- `app.py`
+1. 复刻 cli.py（generate / heal / report 三个 click 子命令；--config / -i / -o / -t 参数）；
+2. 复刻 app.py（Streamlit：上传 yaml + 按钮 generate + 按钮 heal + 显示 RunReport JSON）；
+3. 写 `.claude/skills/api-test-agent/SKILL.md` 一份（哪怕只有 20 行，说明 Skill 的触发词/输入输出）。
 
-### 今天要理解
+**3 条验收单测**：
 
-- CLI 适合自动化、批处理、面试演示命令
-- Streamlit 适合演示产品体验和闭环状态
+1. `python cli.py report --report-path .cache/latest_run_report.json` 命令运行后退出码 0（只要存在报告就能打印）；
+2. Streamlit `streamlit run app.py` 能启动（你可以开浏览器看一眼首页加载不出错就行）；
+3. `.claude/skills/api-test-agent/SKILL.md` 文件存在且描述了输入输出。
 
-### 今天完成标准
+**口头自检 3 问**：
+Q1：为什么 report 命令单独拎出来？（答：面试/debug 时只看报告，不想重跑 generate+heal）
+Q2：CLI 的默认输出路径为什么放在 config.yaml 里而不是写死？（答：让 CI 切换到 output/generated 更容易，用户本地也能自己改）
+Q3：Skill 文档的 MCP 理念怎么体现在实际代码里？（答：Agent 通过 SKILL.md 协议就能调用 generate/heal，不必改代码对接；这就是"可被编排"的能力）
 
-你能解释：
-
-> 为什么一个作品集项目只有脚本还不够，还需要 CLI 或看板？
-
----
-
-## Day 21：最终复写验收 + 面试讲法整理
-
-### 今天目标
-
-- 你不只是“做过”，还要“讲得清楚”
-
-### 最终你要能完成的 5 件事
-
-#### 1. 启动 mock 服务
-
-```bash
-python mock_api_server.py
-```
-
-#### 2. 生成测试工程
-
-```bash
-python cli.py generate -i data/petstore.yaml -o generated_tests
-```
-
-#### 3. 跑 pytest
-
-```bash
-python -m pytest generated_tests -q
-```
-
-#### 4. 运行 heal
-
-```bash
-python cli.py heal -t generated_tests
-```
-
-#### 5. 启动 Streamlit
-
-```bash
-python -m streamlit run app.py
-```
-
-### 面试时你至少要会讲这 4 点
-
-- 我解决了什么问题
-- 为什么先做生成链路，再做自愈链路
-- 为什么要短期记忆 + 长期记忆
-- 为什么要做 CLI + Streamlit 两种入口
-
-### Day 21 完成标准
-
-你能独立回答这句话：
-
-> 如果让你从空项目重新做一遍，你会按什么顺序做，为什么？
+**锚点文件**：[cli.py](../cli.py)、[app.py](../app.py)。
 
 ---
 
-## 五、你每天学习时固定使用的 6 步方法
+## Day 21：自测 13 passed 全绿 + 1分钟/3分钟 话术 + 正式写简历
 
-以后你每天都按这个节奏学，会非常稳：
+**今天的任务清单（不要跳）**：
 
-### 第1步：先看“今天学什么”
+1. 在 fork 目录里跑：`python -m pytest tests -q`。**今天的目标是让你自己的 fork 仓库能达到至少 10+ passed**（不要急，缺哪个就补哪个；允许今天 + 明天一起调）。
+2. 录 1 分钟语音："项目定位 + 三层亮点（门控/记忆/工程化）+ 结果"。
+3. 录 3 分钟语音：STAR 版讲解（S 痛点 / T 约束 / A 四个技术动作 / R 13 passed + 7 ADR + 三入口）。
+4. 把你**真的能讲 3 分钟 + 被追问 3 层不卡壳**的 bullet 正式写进简历（按之前给你的"强化版 6 条"选 4~6 条）。
 
-- 不要一上来就敲代码
-- 先知道今天的目标
+**3 条最终验收（今天不要求全部做到，但本周内必须做到）**：
 
-### 第2步：先读真实文件
+1. `pytest tests -q` 输出 13 passed（对照本仓库 tests 逐个补齐）。
+2. 让一个同学/朋友当面试官，随机从 ADR-01~ADR-07 抽 3 条提问，你能不看资料答出。
+3. 现场 demo：`generate + heal + report` 三段命令不翻资料 5 分钟内跑完。
 
-- 不是看教程，而是看仓库里的真实实现
+**口头终极自检（面试前反复背）**：
+Q1：这个项目和"网上一个调 OpenAI 修脚本的 demo"有什么本质不同？（答：我有结构化诊断+置信度门控、双层记忆validated-only、AST 门控防删断言、原子写防半写、异常家族+handoff 可观测、三入口交付——是"工程化 Agent Harness"，不是"单次调用 prompt"）
+Q2：你在这个项目里最骄傲的 1 件事是什么？（答：把"AI 容易乱修"这个最大风险，拆成 4 层防御——低置信不接/门控拦删断言/记忆只写验证过/异常都写报告，让系统"修不好就停并解释原因"，而不是"硬修把系统修坏"）
+Q3：这个项目下一步你会升级什么？（答：接 DockerExecutor 沙箱执行修复后的 pytest、output 三目录统一、GitHub Actions 让 Build 徽章变真、加 50 条评测集得出真实修复成功率）
 
-### 第3步：自己先讲一遍
-
-- 用自己的话解释输入、输出、作用
-
-### 第4步：再写一个简化版
-
-- 不要求一模一样，但要自己动手写
-
-### 第5步：一定要运行
-
-- pytest
-- cli
-- streamlit
-- mock
-
-### 第6步：写复盘
-
-每天写这 3 句话：
-
-- 今天这个模块输入是什么
-- 输出是什么
-- 如果失败，一般会卡在哪
+**锚点文件**：
+[design_decisions.md](design_decisions.md) 七条 ADR；
+[README.md](../README.md) §测试基线 13 passed。
 
 ---
 
-## 六、你复写过程中最容易踩的坑
+## 附：复刻完成标准（只有 3 条，满足就可以写简历）
 
-### 1. mock 没开
+1. **你自己的 fork 仓库里 `pytest tests -q` 能跑出 >=10 passed**；
+2. **你能不翻资料口头讲出 S1~S3 的 7 条口头自检**；
+3. **你写在简历上的每条 bullet，都能指到 fork 里的具体代码位置**。
 
-现象：
-
-- localhost:8000 连接失败
-
-本质：
-
-- 不是测试生成错了，是服务没启动
-
-### 2. 把生成结果当成项目源码
-
-现象：
-
-- 盯着 `generated_tests/` 看半天，以为那是项目核心
-
-本质：
-
-- 那只是生成结果，不是生成器本体
-
-### 3. 一上来就做自愈
-
-现象：
-
-- prompt、LLM、记忆、图编排全部缠在一起
-
-本质：
-
-- 应该先做 generate，再做 heal
-
-### 4. 不区分 code_bug 和 env_bug
-
-现象：
-
-- 服务没开也让 LLM 修测试代码
-
-本质：
-
-- 方向错了
-
-### 5. 长期记忆乱写
-
-现象：
-
-- 只要有修复结果就往记忆库里塞
-
-本质：
-
-- 错误修复会污染后续 few-shot
-
----
-
-## 七、如果你要我“每天带你学”，我们怎么配合最好
-
-你后面每天只需要这样发我：
-
-```text
-今天学 Day X
-我已经看了：
-1.
-2.
-3.
-
-我不懂的点是：
-1.
-2.
-
-我跑命令的结果是：
-...
-```
-
-我会按下面的方式带你：
-
-- 先用人话解释
-- 再告诉你今天真正该看哪几行
-- 再告诉你今天最值得自己敲哪一小段
-- 最后给你一个当天的“验收题”
-
----
-
-## 八、你现在最适合怎么开始
-
-不要一下看完 21 天再开始。  
-你现在最适合这样做：
-
-1. 先做 Day 1
-2. 把结果发我
-3. 我继续带你做 Day 2
-
-如果你愿意，我下一条就直接开始正式带你学：
-
-**Day 1 第一课：这个项目到底在解决什么问题，项目里每个目录分别是什么。**
-
----
-
-## 九、面试必备：看完这份计划你要能“直接说出来”的内容
-
-这一节是把“理解”变成“能讲”。你可以把它当作背诵稿 + 追问题库。
-
-### 9.1 60 秒讲稿（电梯陈述）
-
-你可以直接按这个模板说（尽量控制 6~8 句话）：
-
-1. 我做了一个 API Test Agent：输入 OpenAPI/Swagger 文档，自动生成分层 pytest 接口自动化工程。
-2. 生成出来的工程按企业常见结构拆分为 `api/testcases/utils/data/config`，测试逻辑与请求封装分离，便于维护。
-3. 生成后会自动运行 pytest，并通过 `pytest-json-report` 统一收集失败的文件路径、错误栈和用例信息。
-4. 如果失败，会先做错误分类：`env_bug/api_bug/code_bug`，只有 `code_bug` 才允许自动修复，避免方向错误。
-5. 对 `code_bug` 进入自愈闭环：优先查短期记忆（同文件同签名直接复用，0 次 LLM 调用），未命中再检索长期记忆（ChromaDB）作为 few-shot。
-6. 然后让 LLM 重写失败测试文件的完整内容，覆盖写回并回归验证，通过才写入长期记忆（validated-only）防止污染。
-7. 整个流程通过 LangGraph 编排成可控状态机，限制最多 3 轮修复，最终输出统一报告给 CLI/Streamlit 展示。
-8. 我还提供了命令行和 Streamlit 看板，可一键跑完整流水线，便于演示与交付。
-
-### 9.2 3 分钟讲稿（模块拆解 + 亮点）
-
-按“输入→处理→输出→闭环”的顺序讲最稳：
-
-- 输入：OpenAPI 文档（`data/petstore.yaml`）
-- 结构化：`parser.py` 抽取 Endpoint（method/path/params/body/responses）
-- 场景化：`scenario_builder.py` 按资源聚合成 CRUD Scenario（解决依赖传递、避免 404）
-- 生成：`generation_chain.py` 生成分层 pytest 工程（`generated_tests/`）
-- 执行：`executor.py` 运行 pytest 并解析 json-report，拿到 failures
-- 诊断：`diagnosis_chain.py` 分类 code/api/env，并生成 error_signature（配合 `signatures.py`）
-- 记忆：`short_memory.py` 做缓存命中；`long_memory.py + retriever.py` 做 validated-only 的 RAG few-shot 检索
-- 修复：`repair_chain.py` 让 LLM 输出完整文件，回归验证后才沉淀
-- 编排：`graph/nodes.py + router.py + state.py + runner.py` 把流程变成状态机并限制 3 轮
-- 输出：`report.py` 统一报告，`cli.py/app.py` 对外展示
-
-你讲完后要能补一句“工程化取舍”：
-
-- 只修测试代码不修生产代码：安全边界清晰
-- validated-only 才写长期记忆：避免错误知识污染
-- max_rounds=3：避免死循环与成本失控
-
-### 9.3 高频追问题库（面试官最爱问）
-
-你至少准备好这些问答（背方向，不用背原句）：
-
-1. 为什么要先“场景化（Scenario）”，不能只按单接口生成用例？
-
-- 因为接口往往有前置依赖（先创建再查询），单接口会天然 404 或依赖环境脏数据；场景化才能稳定复现真实链路。
-
-2. 为什么生成的工程要分 `api/` 和 `testcases/`？
-
-- 把“请求动作”封装到 api 层，testcases 只表达测试意图；后续接口路径/鉴权/headers 变化只改 api 层，维护成本更低。
-
-3. 为什么失败要先分类 code_bug/api_bug/env_bug？
-
-- 环境问题和接口契约问题不应该靠改测试代码解决；分类能避免 LLM 乱改，减少“修错方向”。
-
-4. 为什么只允许修 `code_bug`？
-
-- 安全边界：工具的职责是生成/修测试，不改业务代码；否则风险不可控，也不符合真实团队协作流程。
-
-5. 为什么要 max_rounds=3？
-
-- 防止无限循环、成本失控；3 轮一般足以修复格式/断言/变量等常见错误，超过则需要人工介入。
-
-6. 短期记忆和长期记忆有什么区别？
-
-- 短期记忆是本次/近期运行缓存：同 file+signature 直接复用，省钱省时间。长期记忆是跨会话沉淀：把“验证通过”的修复当作 few-shot 提升后续命中率。
-
-7. 为什么长期记忆要 validated-only？
-
-- 因为 LLM 修复不一定正确，只有回归通过才有资格写入；否则错误示例会污染检索，越修越差。
-
-8. 你怎么证明你做的不是“写个 prompt”而是真工程？
-
-- 有可复现实验环境（mock server + petstore.yaml）、有自动化报告、有限制的闭环状态机、有单元测试保护 parser/router/memory，且支持 CLI 和看板演示。
-
-### 9.4 面试演示脚本（最小可复现 3 步）
-
-你在面试/展示时，按下面顺序最稳：
-
-1. 启动 mock（解释：保证可复现）
-
-```bash
-python mock_api_server.py
-```
-
-2. 生成分层工程（解释：这是工具输出物）
-
-```bash
-python cli.py generate -i data/petstore.yaml -o generated_tests
-```
-
-3. 运行并自愈（解释：失败才修，最多 3 轮，最终给报告）
-
-```bash
-python cli.py heal -t generated_tests
-```
-
-展示点：
-
-- 生成的目录结构（api/testcases/utils/data/config）
-- 报告 `.cache/latest_run_report.json`（是否通过、修复轮次、失败数量、停止原因）
-
----
-
-## 十、速查表：模块输入/输出/常见错误（背这个就能答）
-
-| 模块         | 文件                             | 输入                   | 输出                     | 常见错误/你怎么答                                           |
-| ------------ | -------------------------------- | ---------------------- | ------------------------ | ----------------------------------------------------------- |
-| OpenAPI 解析 | `lang_agent/parser.py`           | OpenAPI YAML/JSON      | Endpoint 列表            | prance 校验依赖缺失 → 走 fallback 读取 yaml/json            |
-| 场景构建     | `lang_agent/scenario_builder.py` | Endpoint 列表          | Scenario 列表（CRUD）    | 单接口 404 → 用场景/或 bootstrap 造数                       |
-| 工程生成     | `generation_chain.py`            | Scenario 列表          | `generated_tests/` 目录  | 旧产物混入 → 删 generated_tests 重新生成                    |
-| 执行器       | `executor.py`                    | tests_path             | failures + stdout/stderr | localhost:8000 拒绝连接 → env_bug，先启动服务               |
-| 分类         | `diagnosis_chain.py`             | error_log              | error_type + signature   | 401 invalid_api_key → env/api 配置问题，不修测试            |
-| 修复         | `repair_chain.py`                | 原文件+错误栈+few-shot | 修复后完整文件           | 只返回片段 → 强制要求输出完整文件内容                       |
-| 短期记忆     | `short_memory.py`                | file+signature         | fixed_code（命中）       | 命中后 0 LLM 调用，解释“省钱省时间更稳”                     |
-| 长期记忆     | `long_memory.py`                 | validated 修复记录     | few-shot 检索结果        | where 条件/embedding 缺失 → 降级策略，validated-only 防污染 |
-| 编排         | `graph/*`                        | state                  | 路由后的下一节点         | max_rounds 保护，api/env 直接 handoff                       |
-| 报告         | `report.py`                      | run 结果               | latest_run_report.json   | UI/CLI 同源，解释“一份事实来源”                             |
+只要做到这 3 条，这个项目就是你的，面试时面对三连问完全不虚。祝顺利！
