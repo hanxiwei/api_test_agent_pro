@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -9,7 +10,16 @@ import streamlit as st
 
 from lang_agent.core.config import load_settings
 from lang_agent.graph.runner import run_generate, run_heal
-from lang_agent.io.report import load_run_report
+from lang_agent.io.report import (
+    build_task_generated_dir,
+    ensure_task_id,
+    load_run_report,
+)
+from lang_agent.web import ConcurrencyGate, InMemoryRateLimiter
+
+
+WEB_CONCURRENCY_GATE = ConcurrencyGate(max_concurrent=2)
+WEB_RATE_LIMITER = InMemoryRateLimiter(max_calls=10, window_seconds=24 * 60 * 60)
 
 
 st.set_page_config(page_title="API Test Agent", layout="wide")
@@ -190,12 +200,15 @@ if "last_action_report" not in st.session_state:
     st.session_state.last_action_report = None
 if "last_generated_files" not in st.session_state:
     st.session_state.last_generated_files = []
+if "client_key" not in st.session_state:
+    st.session_state.client_key = uuid.uuid4().hex
 
 with st.sidebar:
     st.markdown("## 运行配置")
     config_path = st.text_input("config 路径", value="config.yaml")
     base_url = st.text_input("base_url（覆盖 config.yaml）", value="")
     model_name = st.text_input("模型名称（覆盖 config.yaml）", value="")
+    sandbox_kind = st.selectbox("沙箱模式", options=["host", "docker"], index=0)
     enable_long_memory = st.checkbox("启用长期记忆（ChromaDB）", value=False)
     max_rounds = st.slider("最大修复轮次", min_value=1, max_value=10, value=3)
     st.markdown("---")
@@ -226,9 +239,11 @@ uploaded = st.file_uploader("上传 OpenAPI 文件（yaml / yml / json）", type
 
 row1, row2 = st.columns(2)
 with row1:
-    output_dir = st.text_input("测试输出目录", value="generated_tests")
+    output_dir = st.text_input("测试输出目录（可留空，自动使用 task_id 隔离）", value="")
 with row2:
-    tests_dir = st.text_input("待执行 tests 目录", value="generated_tests")
+    tests_dir = st.text_input("待执行 tests 目录（可留空，默认跟随当前 task_id）", value="")
+
+task_id_input = st.text_input("任务 ID（可选；不填则每次自动生成）", value="")
 
 tab_run, tab_report, tab_about = st.tabs(["运行面板", "最近报告", "项目说明"])
 
@@ -255,21 +270,41 @@ with tab_run:
             if openapi_path is None:
                 st.warning("请先上传 OpenAPI 文件，或填写一个存在的本地路径。")
             else:
-                with st.spinner("正在执行流水线：生成测试 → 执行 pytest → 自愈修复..."):
-                    settings = load_settings(
-                        config_path,
-                        overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
-                    )
-                    files = run_generate(settings=settings, openapi_path=openapi_path, output_dir=output_dir)
-                    report = run_heal(settings=settings, tests_path=Path(output_dir))
-                st.session_state.last_generated_files = [str(x) for x in files]
-                report_dict = report.to_dict()
-                report_dict["generated_files"] = st.session_state.last_generated_files
-                st.session_state.last_action_report = report_dict
-                if report.ok:
-                    st.success("流水线执行完成。")
-                else:
-                    st.warning("流水线执行完成，但仍有待处理问题。")
+                action_task_id = ensure_task_id(task_id_input or None)
+                resolved_output_dir = output_dir.strip() or str(build_task_generated_dir(action_task_id))
+                try:
+                    WEB_RATE_LIMITER.check(st.session_state.client_key)
+                    with WEB_CONCURRENCY_GATE.slot(timeout=1):
+                        with st.spinner("正在执行流水线：生成测试 → 执行 pytest → 自愈修复..."):
+                            settings = load_settings(
+                                config_path,
+                                overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
+                            )
+                            files = run_generate(
+                                settings=settings,
+                                openapi_path=openapi_path,
+                                output_dir=resolved_output_dir,
+                                task_id=action_task_id,
+                                sandbox_kind=sandbox_kind,
+                            )
+                            report = run_heal(
+                                settings=settings,
+                                tests_path=Path(resolved_output_dir),
+                                task_id=action_task_id,
+                                sandbox_kind=sandbox_kind,
+                            )
+                    st.session_state.last_generated_files = [str(x) for x in files]
+                    report_dict = report.to_dict()
+                    report_dict["task_id"] = action_task_id
+                    report_dict["output_dir"] = resolved_output_dir
+                    report_dict["generated_files"] = st.session_state.last_generated_files
+                    st.session_state.last_action_report = report_dict
+                    if report.ok:
+                        st.success("流水线执行完成。")
+                    else:
+                        st.warning("流水线执行完成，但仍有待处理问题。")
+                except Exception as exc:
+                    st.error(str(exc))
 
     with btn_col2:
         if st.button("仅生成测试", use_container_width=True):
@@ -277,46 +312,76 @@ with tab_run:
             if openapi_path is None:
                 st.warning("请先上传 OpenAPI 文件，或填写一个存在的本地路径。")
             else:
-                with st.spinner("正在生成 pytest 测试文件..."):
-                    settings = load_settings(
-                        config_path,
-                        overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
-                    )
-                    files = run_generate(settings=settings, openapi_path=openapi_path, output_dir=output_dir)
-                st.session_state.last_generated_files = [str(x) for x in files]
-                st.session_state.last_action_report = {
-                    "mode": "generate",
-                    "ok": True,
-                    "rounds": 0,
-                    "stopped_reason": "generated",
-                    "current_file": None,
-                    "failures_count": 0,
-                    "short_memory_hit": False,
-                    "long_memory_used": False,
-                    "generated_files": st.session_state.last_generated_files,
-                    "repair_history": [],
-                    "handoff_report": None,
-                    "final_result": {},
-                }
-                st.success(f"生成完成，共输出 {len(files)} 个测试文件。")
+                action_task_id = ensure_task_id(task_id_input or None)
+                resolved_output_dir = output_dir.strip() or str(build_task_generated_dir(action_task_id))
+                try:
+                    WEB_RATE_LIMITER.check(st.session_state.client_key)
+                    with WEB_CONCURRENCY_GATE.slot(timeout=1):
+                        with st.spinner("正在生成 pytest 测试文件..."):
+                            settings = load_settings(
+                                config_path,
+                                overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
+                            )
+                            files = run_generate(
+                                settings=settings,
+                                openapi_path=openapi_path,
+                                output_dir=resolved_output_dir,
+                                task_id=action_task_id,
+                                sandbox_kind=sandbox_kind,
+                            )
+                    st.session_state.last_generated_files = [str(x) for x in files]
+                    st.session_state.last_action_report = {
+                        "task_id": action_task_id,
+                        "mode": "generate",
+                        "ok": True,
+                        "rounds": 0,
+                        "stopped_reason": "generated",
+                        "current_file": None,
+                        "failures_count": 0,
+                        "short_memory_hit": False,
+                        "long_memory_used": False,
+                        "generated_files": st.session_state.last_generated_files,
+                        "repair_history": [],
+                        "handoff_report": None,
+                        "final_result": {},
+                        "output_dir": resolved_output_dir,
+                    }
+                    st.success(f"生成完成，共输出 {len(files)} 个测试文件。")
+                except Exception as exc:
+                    st.error(str(exc))
 
     with btn_col3:
         if st.button("仅对已有 tests 自愈", use_container_width=True):
-            with st.spinner("正在执行 pytest 与自愈修复流程..."):
-                settings = load_settings(
-                    config_path,
-                    overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
-                )
-                report = run_heal(settings=settings, tests_path=Path(tests_dir))
-            st.session_state.last_action_report = report.to_dict()
-            if report.ok:
-                st.success("自愈执行完成。")
-            else:
-                st.warning("自愈执行完成，但仍有待处理问题。")
+            action_task_id = ensure_task_id(task_id_input or None)
+            resolved_tests_dir = tests_dir.strip() or str(build_task_generated_dir(action_task_id))
+            try:
+                WEB_RATE_LIMITER.check(st.session_state.client_key)
+                with WEB_CONCURRENCY_GATE.slot(timeout=1):
+                    with st.spinner("正在执行 pytest 与自愈修复流程..."):
+                        settings = load_settings(
+                            config_path,
+                            overrides=_build_overrides(base_url, enable_long_memory, model_name, max_rounds),
+                        )
+                        report = run_heal(
+                            settings=settings,
+                            tests_path=Path(resolved_tests_dir),
+                            task_id=action_task_id,
+                            sandbox_kind=sandbox_kind,
+                        )
+                report_dict = report.to_dict()
+                report_dict["task_id"] = action_task_id
+                report_dict["tests_dir"] = resolved_tests_dir
+                st.session_state.last_action_report = report_dict
+                if report.ok:
+                    st.success("自愈执行完成。")
+                else:
+                    st.warning("自愈执行完成，但仍有待处理问题。")
+            except Exception as exc:
+                st.error(str(exc))
 
     st.write("")
     if st.button("刷新最近报告", use_container_width=True):
-        st.session_state.last_action_report = load_run_report()
+        st.session_state.last_action_report = load_run_report(task_id=task_id_input or None)
         st.success("最近报告已刷新。")
 
     action_report = st.session_state.last_action_report
@@ -326,7 +391,7 @@ with tab_run:
         st.info("最近一次生成文件已缓存，可以直接切到“最近报告”查看全量结果。")
 
 with tab_report:
-    latest = load_run_report()
+    latest = load_run_report(task_id=task_id_input or None)
     _render_latest_summary(latest)
 
 with tab_about:
@@ -350,9 +415,11 @@ with tab_about:
         "config_path": config_path,
         "base_url": base_url or "(使用 config.yaml)",
         "model_name": model_name or "(使用 config.yaml)",
+        "sandbox": sandbox_kind,
         "enable_long_memory": enable_long_memory,
         "max_rounds": max_rounds,
-        "output_dir": output_dir,
-        "tests_dir": tests_dir,
+        "task_id": task_id_input or "(每次自动生成)",
+        "output_dir": output_dir or "(自动使用 output/<task_id>/generated)",
+        "tests_dir": tests_dir or "(默认跟随当前 task_id)",
     }
     st.code(json.dumps(preview, ensure_ascii=False, indent=2), language="json")

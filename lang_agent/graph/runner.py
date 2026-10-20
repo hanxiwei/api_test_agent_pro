@@ -10,7 +10,17 @@ except Exception:  # type: ignore[no-redef]
     StateGraph = None  # type: ignore[assignment]
 
 from ..core.config import Settings
-from ..io.report import DEFAULT_REPORT_PATH, HealReport, RepairHistoryEntry, RunReport, save_run_report
+from ..io.report import (
+    DEFAULT_REPORT_PATH,
+    HealReport,
+    RepairHistoryEntry,
+    RunReport,
+    build_task_cache_path,
+    build_task_generated_dir,
+    build_task_report_path,
+    ensure_task_id,
+    save_run_report,
+)
 from ..core.utils import BaseSelfHealingError
 from .nodes import GraphNodes
 from .router import (
@@ -137,12 +147,19 @@ def run_heal(
     *,
     settings: Settings,
     tests_path: str | Path,
-    cache_path: str | Path = ".cache/short_memory.json",
-    report_path: str | Path = DEFAULT_REPORT_PATH,
+    task_id: str | None = None,
+    cache_path: str | Path | None = None,
+    report_path: str | Path | None = None,
+    sandbox_kind: str = "host",
 ) -> HealReport:
+    task_id = ensure_task_id(task_id)
+    cache_path = Path(cache_path) if cache_path is not None else build_task_cache_path(task_id)
+    report_path = Path(report_path) if report_path is not None else build_task_report_path(task_id)
     nodes = GraphNodes.build(settings=settings, cache_path=cache_path, report_path=report_path)
     graph = _compile_heal_graph(nodes)
     initial_state: AgentState = {
+        "task_id": task_id,
+        "sandbox_kind": sandbox_kind,
         "mode": "heal",
         "tests_path": str(Path(tests_path)),
         "repair_round": 0,
@@ -158,6 +175,7 @@ def run_heal(
     except BaseSelfHealingError as exc:
         handoff = _build_handoff_from_exception(exc, mode="heal", current_file=initial_state.get("current_file"))
         final_report = RunReport(
+            task_id=task_id,
             mode="heal",
             ok=False,
             rounds=int(initial_state.get("repair_round", 0)),
@@ -180,6 +198,7 @@ def run_heal(
         )
         save_run_report(final_report, report_path)
         return HealReport(
+            task_id=task_id,
             ok=False,
             rounds=int(initial_state.get("repair_round", 0)),
             stopped_reason=f"stopped_on_{handoff['category']}",
@@ -202,6 +221,7 @@ def run_heal(
         else:
             stopped_reason = "finished"
     return HealReport(
+        task_id=task_id,
         ok=bool(final_result.get("ok", state.get("tests_passed", False))),
         rounds=int(state.get("repair_round", 0)),
         stopped_reason=stopped_reason,
@@ -219,15 +239,23 @@ def run_generate(
     *,
     settings: Settings,
     openapi_path: str | Path,
-    output_dir: str | Path,
-    report_path: str | Path = DEFAULT_REPORT_PATH,
+    output_dir: str | Path | None = None,
+    task_id: str | None = None,
+    report_path: str | Path | None = None,
+    sandbox_kind: str = "host",
 ) -> list[Path]:
-    nodes = GraphNodes.build(settings=settings, cache_path=".cache/short_memory.json", report_path=report_path)
+    task_id = ensure_task_id(task_id)
+    output_dir = Path(output_dir) if output_dir is not None else build_task_generated_dir(task_id)
+    report_path = Path(report_path) if report_path is not None else build_task_report_path(task_id)
+    cache_path = build_task_cache_path(task_id)
+    nodes = GraphNodes.build(settings=settings, cache_path=cache_path, report_path=report_path)
     graph = _compile_generate_graph(nodes)
     initial_state: AgentState = {
+        "task_id": task_id,
+        "sandbox_kind": sandbox_kind,
         "mode": "generate",
         "openapi_path": str(Path(openapi_path)),
-        "output_dir": str(Path(output_dir)),
+        "output_dir": str(output_dir),
         "repair_round": 0,
         "generated_files": [],
         "failed_tests": [],
@@ -241,6 +269,7 @@ def run_generate(
     except BaseSelfHealingError as exc:
         handoff = _build_handoff_from_exception(exc, mode="generate")
         final_report = RunReport(
+            task_id=task_id,
             mode="generate",
             ok=False,
             rounds=0,

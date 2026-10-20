@@ -1,0 +1,71 @@
+# API Test Agent Pro · 评测集定义
+#
+# 每个 case 是一个 Task：给定一个基准工程（golden_dir），通过 run_heal / run_generate
+# 执行，再用 expected 判定是否通过。
+#
+# 字段说明：
+#   name             case 唯一标识
+#   mode             heal（自愈）| generate（生成）
+#   kind             [可选] 记忆类特殊评测：short_memory_reuse（短期复用）| no_pollution（防污染）
+#   suite            repair（错题集/自愈）| gate（门控挑战集）| generation（黄金集）| memory（记忆能力）
+#   patch            [heal] 相对项目根的坏文件路径，覆盖到 golden 工程 testcases/ 下同名文件
+#   openapi_path     [generate] 相对项目根的 OpenAPI 文档路径
+#   expect_pass      期望的最终结果：true=应成功，false=应被门控拦截（不修/交人）
+#   expect_category  [heal+gate] 期望的 handoff 分类（如 api_bug），可选，用于验证"没误修"
+
+golden_dir: generated_tests
+pass_k: 3
+
+cases:
+  # ---- 错题集：运行时错误，应被自愈修复 ----
+  - name: nameerror_selfheal
+    mode: heal
+    suite: repair
+    patch: eval/fixtures/bugs/nameerror/test_pets_create_pet.py
+    expect_pass: true
+
+  - name: typeerror_selfheal
+    mode: heal
+    suite: repair
+    patch: eval/fixtures/bugs/typeerror/test_pets_create_pet.py
+    expect_pass: true
+
+  # ---- 门控挑战集：应被拦截、不盲目修复 ----
+  - name: syntax_gate
+    mode: heal
+    suite: gate
+    patch: eval/fixtures/bugs/syntax/test_pets_create_pet.py
+    expect_pass: false
+
+  # 断言失败（后端实际返回 201，断言写成 200）：应分类 api_bug 并交人，而非误修代码
+  - name: apibug_gate
+    mode: heal
+    suite: gate
+    patch: eval/fixtures/bugs/apibug/test_pets_create_pet.py
+    expect_pass: false
+    expect_category: api_bug
+
+  # ---- 黄金集：生成链路，应生成结构完整、可 collect 的 pytest 工程 ----
+  - name: petstore_generate
+    mode: generate
+    suite: generation
+    openapi_path: data/petstore.yaml
+    expect_pass: true
+
+  # ---- 记忆能力：短期复用 + 防污染 ----
+  # 同一个 bug 修两次：第一次走 LLM 修复，第二次应命中短期记忆、零 LLM 直接复用
+  - name: short_memory_reuse
+    mode: heal
+    suite: memory
+    kind: short_memory_reuse
+    patch: eval/fixtures/bugs/nameerror/test_pets_create_pet.py
+    expect_pass: true
+
+  # 后端缺陷被 handoff，未通过 pytest 的修复不应写入记忆
+  - name: no_pollution
+    mode: heal
+    suite: memory
+    kind: no_pollution
+    patch: eval/fixtures/bugs/apibug/test_pets_create_pet.py
+    expect_pass: true
+    expect_category: api_bug

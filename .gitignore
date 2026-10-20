@@ -1,11 +1,40 @@
+# 密钥与凭证
 .env
-.venv/
-.cache/
-.pytest_cache/
+.env.*
+!.env.example
+
+# 运行时产物 / 历史修复库 / 生产日志（按 task_id 隔离的 short_memory + run_report）
+output/
+
+# 记忆库
 .chroma/
 .chroma_acceptance/
+
+# 生成的对外 pytest 工程
 generated_tests/
+
+# 评测运行产物
+eval/runs/
+
+# Python
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地缓存 / IDE / 系统
+.cache/
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# 前端 / 构建（如未来接入）
+node_modules/
+dist/
+build/

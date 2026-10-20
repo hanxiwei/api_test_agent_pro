@@ -4,6 +4,8 @@ from typing import Any, TypedDict
 
 
 class AgentState(TypedDict, total=False):
+    task_id: str
+    sandbox_kind: str
     mode: str
     openapi_path: str
     output_dir: str

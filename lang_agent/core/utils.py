@@ -34,6 +34,26 @@ class TestRunnerError(BaseSelfHealingError):
     pass
 
 
+class SandboxViolationError(BaseSelfHealingError):
+    pass
+
+
+class SandboxTimeoutError(BaseSelfHealingError):
+    pass
+
+
+class RateLimitExceededError(BaseSelfHealingError):
+    pass
+
+
+class ConcurrencyLimitExceededError(BaseSelfHealingError):
+    pass
+
+
+class DockerNotAvailableError(BaseSelfHealingError):
+    pass
+
+
 class DiagnosisBlockedError(BaseSelfHealingError):
     pass
 

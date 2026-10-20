@@ -1,0 +1,8 @@
+case,类型,问题（输入）,参考答案（期望行为）,评价标准（判通过）,依赖
+nameerror_selfheal,自愈-repair,create_pet 误写成 create_pett（运行时 NameError）,修复为 create_pet 且 pytest 变绿,pytest 变绿 且 assert 不下降,LLM+mock
+typeerror_selfheal,自愈-repair,create_pet 调用少传 payload（运行时 TypeError）,补上 payload 且 pytest 变绿,pytest 变绿 且 assert 不下降,LLM+mock
+syntax_gate,门控-gate,文件末尾未闭合 def（collect 阶段语法错误）,被 errored 拦截且不盲目修,pytest 未变绿（证明没误修）,无
+apibug_gate,门控-gate,后端返回 201 但断言错写成 200（AssertionError）,分类 api_bug 并交人不误修,pytest 未变绿 且 handoff 分类=api_bug,LLM+mock
+petstore_generate,生成-generation,输入 data/petstore.yaml,生成结构完整的分层 pytest 工程,结构完整 且 pytest --collect-only 成功,LLM
+short_memory_reuse,记忆-memory,同一 NameError bug 修两次,第二次命中短期记忆零 LLM 复用,第一次修好且未命中 且 第二次修好且命中,LLM+mock
+no_pollution,记忆-memory,后端返回 201 但断言 200（api_bug）,交人且不写入记忆,未通过 pytest 且 记忆为空 且 分类=api_bug,LLM+mock

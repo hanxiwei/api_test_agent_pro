@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..core.utils import TestRunnerError
+from ..core.utils import SandboxTimeoutError, TestRunnerError
+from .sandbox import SandboxConfig, build_sandbox
 
 
 @dataclass(frozen=True)
@@ -40,10 +41,25 @@ def _user_hint_for(test_path: Path, exit_code: int, stderr: str) -> str:
     )
 
 
-def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str | Path) -> PytestRunResult:
+def run_pytest(
+    test_path: str | Path,
+    pytest_args: list[str],
+    report_path: str | Path,
+    sandbox: SandboxConfig | None = None,
+    sandbox_kind: str = "host",
+) -> PytestRunResult:
     test_path = Path(test_path)
     report_path = Path(report_path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    if sandbox is None:
+        policy_path = Path(__file__).resolve().parent / "sandbox" / "policy.yaml"
+        sandbox = SandboxConfig.from_policy_file(
+            policy_path,
+            writable_roots=(str(test_path.resolve()), str(report_path.parent.resolve())),
+        )
+    runtime_sandbox = build_sandbox(sandbox_kind, sandbox)
+    runtime_sandbox.validate_runtime()
+    runtime_sandbox.validate_write_path(report_path)
 
     cmd = [
         sys.executable,
@@ -54,9 +70,22 @@ def run_pytest(test_path: str | Path, pytest_args: list[str], report_path: str |
         f"--json-report-file={report_path}",
         *pytest_args,
     ]
-    env = os.environ.copy()
+    env = runtime_sandbox.build_env(os.environ.copy())
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-    p = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    try:
+        p = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=sandbox.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SandboxTimeoutError(
+            f"pytest 在沙箱内执行超时（>{sandbox.timeout_seconds}s）",
+            user_hint="请减少单次生成规模，或提高沙箱超时阈值后重试。",
+            details={"command": cmd, "timeout_seconds": sandbox.timeout_seconds},
+        ) from exc
     report = None
     if report_path.exists():
         try:

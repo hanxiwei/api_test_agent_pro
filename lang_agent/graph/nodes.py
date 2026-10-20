@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..chains.diagnosis_chain import DiagnosisBlockedError, diagnose
+from ..chains.diagnosis_chain import diagnose
 from ..chains.generation_chain import generate_pytest_project
 from ..chains.repair_chain import LLMUnavailableError, RepairGateBlockedError, repair_test_file
 from ..core.config import Settings
@@ -15,7 +15,7 @@ from ..memory.short_memory import ShortMemory
 from ..io.parser import OpenAPIParserError, parse_openapi
 from ..io.report import RepairHistoryEntry, RunReport, save_run_report
 from ..chains.scenario_builder import build_scenarios
-from ..core.utils import BaseSelfHealingError, atomic_write_text
+from ..core.utils import BaseSelfHealingError, DiagnosisBlockedError, atomic_write_text
 from .state import AgentState
 
 
@@ -116,9 +116,14 @@ class GraphNodes:
         }
 
     def run_tests_node(self, state: AgentState) -> AgentState:
-        report_path = Path(".cache") / "pytest_report.json"
+        report_path = self.report_path.parent / "pytest_report.json"
         try:
-            result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+            result = run_pytest(
+                state["tests_path"],
+                self.settings.pytest_args,
+                report_path,
+                sandbox_kind=str(state.get("sandbox_kind") or "host"),
+            )
         except BaseSelfHealingError:
             raise
         except Exception as exc:
@@ -246,9 +251,14 @@ class GraphNodes:
         return {"repair_round": repair_round, "repair_history": history}
 
     def retest_node(self, state: AgentState) -> AgentState:
-        report_path = Path(".cache") / "pytest_report_after_fix.json"
+        report_path = self.report_path.parent / "pytest_report_after_fix.json"
         try:
-            result = run_pytest(state["tests_path"], self.settings.pytest_args, report_path)
+            result = run_pytest(
+                state["tests_path"],
+                self.settings.pytest_args,
+                report_path,
+                sandbox_kind=str(state.get("sandbox_kind") or "host"),
+            )
         except BaseSelfHealingError:
             raise
         except Exception as exc:
@@ -335,6 +345,7 @@ class GraphNodes:
             else:
                 stopped_reason = "finished"
         report = RunReport(
+            task_id=state.get("task_id"),
             mode=str(state.get("mode") or ""),
             ok=ok,
             rounds=int(state.get("repair_round", 0)),

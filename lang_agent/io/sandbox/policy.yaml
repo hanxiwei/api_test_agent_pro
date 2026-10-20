@@ -1,0 +1,10 @@
+network:
+  allow_all: false
+  allowlist:
+    - localhost
+    - 127.0.0.1
+
+resources:
+  timeout_seconds: 300
+  memory_limit_mb: 512
+  cpu_limit: 1
