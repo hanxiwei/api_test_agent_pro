@@ -398,7 +398,7 @@ api_test_agent_pro/
 └── README.md
 ```
 
-### 生成产物目录（可删、随时能重新生成，不进仓库）
+### 生成产物目录
 
 - `generated_tests/`：`-o` 指定的对外产物（分层 pytest 工程）；未指定 `-o` 时默认落到 `output/<task_id>/generated/`
 - `output/`：按 task_id 隔离的运行报告、短期记忆缓存、pytest json-report，以及 `output/latest_run_report.json`
