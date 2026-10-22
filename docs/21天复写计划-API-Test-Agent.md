@@ -1,6 +1,6 @@
 # 21天复刻学习计划：从空目录一比一吃透 API Test Agent
 
-> 核心原则：**每天只学 1.5~2 小时。
+> 核心原则：**每天只学 1.5~2 小时。**
 
 ---
 
@@ -18,13 +18,13 @@
 
 ## 五个阶段总览（21 天总地图）
 
-| 阶段                   | 天数    | 你会掌握什么                                                                                                   | 对应简历里能陆续新增几条 bullet              |
-| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| **S0 准备**            | D1~D3   | 环境 + 四层架构脑图 + 输入输出总览；会看 RunReport/HandoffReport                                               | （暂不加，先打底）                           |
-| **S1 工程底座**        | D4~D8   | config、signatures、utils（原子写+异常家族）、io/parser、io/executor、io/report                                | 2 条（底座 + 解析/执行/报告）                |
-| **S2 链 & 记忆**       | D9~D15  | scenario_builder、generation/diagnosis/repair 三条链、双层 memory + retriever、llm factory + prompts、AST 门控 | 2 条（双层记忆 RAG + 三层防御 + LLM 兜底）   |
-| **S3 LangGraph 编排**  | D16~D19 | state、nodes、router、runner、两张状态机图、异常兜底 handoff、置信度<0.7 handoff 门控                          | 2 条（状态机全链路 + 双层不误修）            |
-| **S4 入口 & 面试可讲** | D20~D21 | CLI、Streamlit、Skill 文档；13 自测全绿；1 分钟/3 分钟话术；评测集（可选）；把「吃透的」正式写进简历           | 加剩余 bullet，补齐"评测维度/技能封装"等表述 |
+| 阶段                          | 天数    | 你会掌握什么                                                                                                   | 对应简历里能陆续新增几条 bullet              |
+| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **S0 准备**                   | D1~D3   | 环境 + 四层架构脑图 + 输入输出总览；会看 RunReport/HandoffReport                                               | （暂不加，先打底）                           |
+| **S1 工程底座**               | D4~D8   | config、signatures、utils（原子写+异常家族）、io/parser、io/executor、io/report                                | 2 条（底座 + 解析/执行/报告）                |
+| **S2 链 & 记忆**              | D9~D15  | scenario_builder、generation/diagnosis/repair 三条链、双层 memory + retriever、llm factory + prompts、AST 门控 | 2 条（双层记忆 RAG + 三层防御 + LLM 兜底）   |
+| **S3 LangGraph 编排**         | D16~D19 | state、nodes、router、runner、两张状态机图、异常兜底 handoff、置信度<0.7 handoff 门控                          | 2 条（状态机全链路 + 双层不误修）            |
+| **S4 入口 & 评测 & 面试可讲** | D20~D21 | CLI、Streamlit、Skill 文档；eval/ 评测回测（7 case + Pass@k）；1 分钟/3 分钟话术；把「吃透的」正式写进简历     | 加剩余 bullet，补齐"评测体系/技能封装"等表述 |
 
 ---
 
@@ -36,26 +36,27 @@
 
 **你要做的事**：
 
-1. 通读 README 的「背景 / 这个项目干了什么 / 功能特性 / 架构 / 快速开始」5 节。
+1. 通读 README 的「背景 / 这个项目干了什么 / 功能特性 / 架构 / 快速开始 / Agent 评测」6 节。
 2. 通读 [architecture.md](architecture.md) §1~§4。
 3. 建立干净复刻目录，建虚拟环境并 `pip install -r requirements.txt`（从本仓库复制一份 requirements.txt 过去）。
-4. 在本仓库里运行一次 3 条命令，先看一眼真实产物：
-   - `python mock_api_server.py  `（另一个终端，跑在后台）
+4. 在本仓库里运行一次这几条命令，先看一眼真实产物：
+   - `python mock_api_server.py`（另一个终端，跑在后台）
    - `python cli.py generate -i data/petstore.yaml -o D:/tmp/fork_demo_generated`
    - `python cli.py heal -t D:/tmp/fork_demo_generated` 后再 `python cli.py report` 看 RunReport
+   - `python eval/runner.py --dry-run` 看评测集加载了哪些 case
 
 **当天必跑的 3 条验收命令（空断言/能 print 也算过）**：
 
 1. `python -c "import yaml, requests, pytest; print('deps ok')"`
 2. 能 print 出 README 里四段分层架构（把架构图 ASCII 写进一个 txt，py 里读出来打印，保证你至少看过一遍）
-3. `python -m pytest tests -q`（在本仓库跑，先亲眼见过全绿 13 passed 是什么样）
+3. `python eval/runner.py --dry-run`（能列出 7 个评测 case，证明你知道"评测集"是什么、长什么样）
 
 **口头自检 3 问（录 5 分钟语音）**：
 Q1：这个项目解决的两个核心痛点是什么？（答：接口用例写得慢 + 业务迭代后脚本维护贵）
 Q2：四层架构分别是什么？各自职责一句话。（答：入口层 / Harness 层 / 横切 io+llm+core 层 / 产物层）
-Q3："机器"和"生成结果"分别指哪些目录？（答：机器=lang_agent+cli+app；生成=generated_tests+output+reports）
+Q3："机器"和"生成结果"分别指哪些目录？（答：机器=lang_agent+cli+app；生成=generated_tests + output（报告/缓存/生成工程）+ eval/runs）
 
-**锚点文件**： [README.md](../README.md) §背景§特性§架构、[architecture.md](architecture.md) §1~§4。
+**锚点文件**： [README.md](../README.md) §背景§特性§架构§评测、[architecture.md](architecture.md) §1~§4。
 
 ---
 
@@ -84,9 +85,9 @@ Q3：RunReport 为什么要 handoff_report / repair_history 两个字段？（�
 
 **锚点文件**：
 [core/config.py](../lang_agent/core/config.py)、
-[io/parser.py](../lang_agent/io/parser.py#L18-L29)、
-[io/executor.py](../lang_agent/io/executor.py#L21-L31)、
-[io/report.py](../lang_agent/io/report.py#L18-L53)。
+[io/parser.py](../lang_agent/io/parser.py)、
+[io/executor.py](../lang_agent/io/executor.py)、
+[io/report.py](../lang_agent/io/report.py)。
 
 ---
 
@@ -113,8 +114,8 @@ Q2：为什么 generate 先只 mkdir + touch 6 个空文件？（答：分层骨
 Q3：RunReport 为什么用 `json.dumps` + `indent=2 + ensure_ascii=False`？（答：中文可读，面试现场 cat 就能看）
 
 **锚点文件**：
-[chains/generation_chain.py](../lang_agent/chains/generation_chain.py#L29-L59)、
-[io/report.py save_run_report](../lang_agent/io/report.py#L78-L82)。
+[chains/generation_chain.py](../lang_agent/chains/generation_chain.py)、
+[io/report.py save_run_report](../lang_agent/io/report.py)。
 
 ---
 
@@ -141,7 +142,7 @@ Q1：为什么 override 要 deep_merge，不是直接 dict.update？（答：mod
 Q2：为什么 load_dotenv(override=False)？（答：用户自己在 shell 里 export 的变量优先，不会被 .env 覆盖）
 Q3：为什么 OPENAI_API_KEY 不传进 Settings？（答：密钥不要进 dataclass，永远只从 env 读，避免序列化泄露）
 
-**锚点文件**：[core/config.py load_settings](../lang_agent/core/config.py#L46-L79)。
+**锚点文件**：[core/config.py load_settings](../lang_agent/core/config.py)。
 
 ---
 
@@ -166,7 +167,7 @@ Q1：signatures 为什么只取尾部 20 行？（答：错误根因通常在最
 Q2：为什么把数字和 0x 指针替换成占位符？（答：去掉不稳定信息，命中短期记忆概率才高）
 Q3：BaseSelfHealingError 的 user_hint 和 details 有什么区别？（答：hint 给最终用户看一句话怎么做；details 是结构化字段用于 handoff_report）
 
-**锚点文件**：[core/signatures.py](../lang_agent/core/signatures.py)、[core/utils.py 异常家族](../lang_agent/core/utils.py#L9-L40)。
+**锚点文件**：[core/signatures.py](../lang_agent/core/signatures.py)、[core/utils.py 异常家族](../lang_agent/core/utils.py)。
 
 ---
 
@@ -187,8 +188,7 @@ Q1：为什么 fsync 之后再 os.replace？（答：确保磁盘真的写了再
 Q2：为什么 os.replace 而不是先删再 rename？（答：Windows/Posix 同目录下 replace 对已有文件直接替换；先删再 rename 中间态会丢旧文件）
 Q3：什么时候 atomic_write_text 不是原子？（答：跨卷 replace 不是原子；所以我默认写同目录）
 
-**锚点文件**：[core/utils.py atomic_write_text](../lang_agent/core/utils.py#L43-L73)。
-**对照本仓库 tests**：[test_utils_robustness.py](../tests/test_utils_robustness.py#L19-L81)。
+**锚点文件**：[core/utils.py atomic_write_text](../lang_agent/core/utils.py)。（原仓库的 `tests/test_utils_robustness.py` 已随 tests/ 移除，这里直接对照源码，自己写 3 条验收单测）
 
 ---
 
@@ -209,7 +209,7 @@ Q1：为什么 prance 失败就 fallback 纯 yaml？（答：无网络/缺第三
 Q2：operation_id 缺失时为什么自己拼？（答：后面生成 api 层函数名必须稳定）
 Q3：为什么 parameters 合并 path-level 和 operation-level 两份？（答：OpenAPI 规范允许，漏合并则生成的 path parameter 缺失）
 
-**锚点文件**：[io/parser.py parse_openapi](../lang_agent/io/parser.py#L53-L132)。
+**锚点文件**：[io/parser.py parse_openapi](../lang_agent/io/parser.py)。
 
 ---
 
@@ -233,7 +233,7 @@ Q1：为什么用 `sys.executable -m pytest` 而不是 `pytest`？（答：保�
 Q2：为什么 exit_code 不在 {0,1} 且 report 为空才抛？（答：pytest 内部崩溃、收集错误可能 exit_code=2/4/5，这时不能当"失败"要当"执行环境问题"）
 Q3：为什么 failures 自己拼 nodeid/file/call_longrepr 三个字段？（答：后面 classify 节点只依赖这三个，格式升级 json-report 也不影响）
 
-**锚点文件**：[io/executor.py run_pytest](../lang_agent/io/executor.py#L33-L102)、[io/report.py save/load](../lang_agent/io/report.py#L78-L91)。
+**锚点文件**：[io/executor.py run_pytest](../lang_agent/io/executor.py)、[io/report.py save/load](../lang_agent/io/report.py)。
 
 ---
 
@@ -294,11 +294,11 @@ Q3：为什么 generation_prompt 明确要求"只输出 Python 代码不要 mark
 3. `test_conftest_exposes_base_url_fixture`：打开生成的 `output/conftest.py`，字符串 `def base_url` 存在。
 
 **口头自检 3 问**：
-Q1：为什么生成 api 层独立模块，不在 test*\*.py 直接写 requests？（答：接口升级只要改 api 层，测试层复用）
-Q2：为什么 test*\*.py 要固定用 utils.assertions / data_loader？（答：断言风格、加载种子数据的方式统一）
+Q1：为什么生成 api 层独立模块，不在 test\*.py 直接写 requests？（答：接口升级只要改 api 层，测试层复用）
+Q2：为什么 test\*.py 要固定用 utils.assertions / data_loader？（答：断言风格、加载种子数据的方式统一）
 Q3：为什么所有文件写入都走 atomic_write_text？（答：生成中途 Ctrl+C 不把半写 py 文件留在磁盘）
 
-**锚点文件**：[chains/generation_chain.py](../lang_agent/chains/generation_chain.py#L60-L211)。
+**锚点文件**：[chains/generation_chain.py](../lang_agent/chains/generation_chain.py)。
 
 ---
 
@@ -319,7 +319,7 @@ Q1：为什么 heuristic confidence 固定 0.55？（答：既不会被 0.7 门�
 Q2：为什么 action_hint 必须是一句人话？（答：handoff 时直接给用户看，不需要再解包）
 Q3：为什么 reasons 是数组而不是一句话？（答：给面试官、SDET 自己看能知道分类依据）
 
-**锚点文件**：[chains/diagnosis_chain.py](../lang_agent/chains/diagnosis_chain.py#L23-L163)。
+**锚点文件**：[chains/diagnosis_chain.py](../lang_agent/chains/diagnosis_chain.py)。
 
 ---
 
@@ -340,7 +340,7 @@ Q1：为什么断言削弱是红线？（答：LLM 最容易走的捷径就是�
 Q2：为什么只拦"3 件事"不拦更多？（答：低误杀原则；门控过严会把本来能修的也拦掉，handoff 太多就显得 Agent 没用）
 Q3：为什么 apply_repair_to_file 要先 validate 再 atomic_write？（答：先保证修好才允许替换旧文件，磁盘上永远是上一次好的或这次好的）
 
-**锚点文件**：[chains/repair_chain.py \_validate_repaired_code](../lang_agent/chains/repair_chain.py#L38-L104)。
+**锚点文件**：[chains/repair_chain.py \_validate_repaired_code](../lang_agent/chains/repair_chain.py)。
 
 ---
 
@@ -394,7 +394,7 @@ Q1：为什么"short 命中"要和 long_memory_used 区分开记到 RepairHistor
 Q2：为什么 few-shot 最多 2~3 条？（答：再多上下文就太长，LLM 费用高且慢）
 Q3：今天串 heal 小闭环和明天 LangGraph 编排的区别是什么？（答：今天是手写 if/while；明天是把每一步变成独立节点，方便 trace + 画图 + 加熔断边）
 
-**锚点文件**：[memory/retriever.py](../lang_agent/memory/retriever.py)、[graph/nodes.py 修复相关节点](../lang_agent/graph/nodes.py#L143-L283)。
+**锚点文件**：[memory/retriever.py](../lang_agent/memory/retriever.py)、[graph/nodes.py 修复相关节点](../lang_agent/graph/nodes.py)。
 
 ---
 
@@ -407,62 +407,66 @@ Q3：今天串 heal 小闭环和明天 LangGraph 编排的区别是什么？（�
 **你要做**：
 
 1. 复刻 state.py AgentState TypedDict；
-2. 复刻 router.py（route_after_test_run / route_after_classification / route_after_short_lookup / route_after_retest）。
+2. 复刻 router.py 四个函数：`route_after_test_run` / `route_after_classification` / `route_after_short_memory` / `route_after_retest`。
 
-**3 条验收单测（对照本仓库 tests/test_router.py）**：
+> 注意：路由函数返回的是**分支名**，不是目标节点名。分支名和目标节点的映射在 runner.py 的 `add_conditional_edges` 里。
 
-1. `test_route_classification_confidence_gate`：code_bug + confidence=0.69 → 'handoff'；0.9 → 'build_signature'。
-2. `test_route_after_retest_passed`：retest exit=0 → 'persist_memory'。
-3. `test_route_after_test_run_errored`：pytest exit=4 或 5 → 'handoff'。
+**3 条验收单测（对照 [graph/router.py](../lang_agent/graph/router.py) 源码写）**：
+
+1. `test_route_classification_confidence_gate`：code_bug + confidence=0.69 → 'handoff'；confidence=0.9 → 'code_bug'。
+2. `test_route_after_retest_passed`：retest exit=0 且无失败 → 'passed'。
+3. `test_route_after_test_run_errored`：exit_code=4/5 且 failed 为空 → 'errored'。
 
 **口头自检 3 问**：
 Q1：为什么用 TypedDict 不 dataclass？（答：LangGraph 每个节点会 mutate dict 里字段，TD 天然兼容；dataclass 要 to_dict/from_dict 麻烦）
 Q2：为什么缺省 confidence 也要放行 code_bug？（答：兼容历史 state 可能没 confidence 字段；别让用户升级后跑不动）
 Q3：为什么 max_rounds 熔断放在 router 里？（答：熔断是"路由决策"——决定下一步去哪，而不是"节点动作"）
 
-**锚点文件**：[graph/state.py](../lang_agent/graph/state.py)、[graph/router.py](../lang_agent/graph/router.py)、[tests/test_router.py](../tests/test_router.py#L33-L46)。
+**锚点文件**：[graph/state.py](../lang_agent/graph/state.py)、[graph/router.py](../lang_agent/graph/router.py)。
 
 ---
 
 ## Day 17：nodes.py 先写 Generate 图 4 节点 + final_report_node
 
-**目标**：不接 LangGraph，你也能手动按顺序 `parse_openapi_node→build_scenarios_node→generate_project_node→final_report_node` 调用，得到一个合法 RunReport。
+**目标**：不接 LangGraph，你也能手动按顺序 `parse_openapi_node→build_scenarios_node→generate_tests_node→final_report_node` 调用，得到一个合法 RunReport。
 
-**你要做**：复刻 nodes.py 中 parse / build_scenarios / generate_project / final_report_node 四个节点实现（注意 import 路径要对 fork 目录）。
+**你要做**：复刻 nodes.py 中 parse_openapi / build_scenarios / generate_tests / final_report 四个节点实现（注意 import 路径要对 fork 目录）。
 
 **3 条验收单测**：
 
 1. `test_parse_node_populates_endpoints`：state 在 parse 后 'endpoints' 非空。
 2. `test_generate_project_node_populates_generated_files`：state['generated_files'] len>0。
-3. `test_final_report_node_returns_report`：state 包含 'run_report_path'，且 load_run_report 能读回 dict。
+3. `test_final_report_node_returns_report`：state 包含 'report_path'，且 load_run_report 能读回 dict。
 
 **口头自检 3 问**：
 Q1：为什么每个节点返回一个 dict（增量字段）而不是直接改 state？（答：LangGraph 会自动把返回 dict merge 到 state；风格统一，方便单测每个节点输出）
 Q2：为什么 final_report_node 同时写 report_path 和 state 里的字段？（答：路径给 CLI/UI 读；state 给图后续边用——虽然 Generate 后面没边了，但保持一致）
 Q3：为什么在生成链任何异常会被 runner 捕获 handoff？今天你手工测一下节点抛错，手写 catch 后写 handoff。（答：用户不会看到堆栈，只会看到结构化提示 + actionable_hint）
 
-**锚点文件**：[graph/nodes.py](../lang_agent/graph/nodes.py#L38-L140)。
+**锚点文件**：[graph/nodes.py](../lang_agent/graph/nodes.py)（parse_openapi_node / build_scenarios_node / generate_tests_node / final_report_node）。
 
 ---
 
-## Day 18：nodes.py 写 Heal 图 12 节点 + runner.\_build_handoff_from_exception
+## Day 18：nodes.py 写 Heal 图 13 节点 + runner.\_build_handoff_from_exception
 
-**目标**：Heal 图的每个节点单测跑通（输入 state 子集，输出正确字段）。重点：build_signature_node、lookup_short_node、retrieve_long_node、repair_code_node、apply_fix_node、retest_node、persist_memory_node、build_handoff_report_node。
+**目标**：Heal 图的每个节点单测跑通（输入 state 子集，输出正确字段）。重点：build_signature_node、lookup_short_memory_node、retrieve_long_memory_node、repair_code_node、apply_fix_node、retest_node、persist_memory_node、build_handoff_report_node。
 
 **你要做**：完整复刻 heal 图所有节点 + 手写 runner.\_build_handoff_from_exception（接受任意 BaseSelfHealingError，写 RunReport 含 handoff_report dict）。
+
+> Heal 图一共 13 个节点：run_tests → collect_failures → pick_failure → classify_failure → build_signature → lookup_short_memory → retrieve_long_memory → repair_code → apply_fix → retest → persist_memory → build_handoff_report → final_report。
 
 **3 条验收单测**：
 
 1. `test_build_signature_node_writes_signature`：给一段 call_longrepr，state 填好 current_file + failures[0]，build_signature 后 state.error_signature 非空。
 2. `test_persist_memory_skipped_if_short_hit`：short_memory_hit=True 时，persist_memory_node 不调 long_memory.add_validated_fix（你 mock long_memory 观察没调用）。
-3. `test_handoff_from_exception_writes_report`：抛一个 OpenAPIParserError，\_build_handoff_from_exception 后 load_run_report 读到 handoff_report.type == 'OpenAPIParserError'。
+3. `test_handoff_from_exception_writes_report`：抛一个 OpenAPIParserError，\_build_handoff_from_exception 后 load_run_report 读到 handoff_report.error_type == 'OpenAPIParserError'。
 
 **口头自检 3 问**：
 Q1：为什么 retest 节点失败后回到 run_tests 而不是 classify？（答：每轮 retest 后可能还有其它文件失败，必须重新全量收集 + 重新 pick_failure）
 Q2：为什么 repair_code_node 要同时接 LLM 和 short_memory code？（答：short 命中就别调用 LLM，省钱省时间）
 Q3：为什么 build_handoff_report 节点要把 actionable_hint 放在最显眼的字段？（答：handoff 的目的是让人上手修，不是给机器读）
 
-**锚点文件**：[graph/nodes.py Heal 节点](../lang_agent/graph/nodes.py#L143-L285)、[graph/runner.py \_build_handoff_from_exception](../lang_agent/graph/runner.py#L136-L194)。
+**锚点文件**：[graph/nodes.py Heal 节点](../lang_agent/graph/nodes.py)、[graph/runner.py \_build_handoff_from_exception](../lang_agent/graph/runner.py#L35-L58)。
 
 ---
 
@@ -479,18 +483,18 @@ Q3：为什么 build_handoff_report 节点要把 actionable_hint 放在最显眼
 
 1. `test_run_generate_generates_report`：调用 run_generate，run_report_path 指向的 json 文件存在且 ok=True。
 2. `test_run_heal_on_pass_is_noop`：给一个 100% passed 的工程，run_heal rounds=0，ok=True，no repair。
-3. `test_run_heal_on_code_bug_reaches_round_1`：给一个故意 `assert 1==2` 的工程 + low-confidence 兜底（confidence=0.55），断言最终 stopped_reason='handoff_classification_confidence'。
+3. `test_run_heal_on_code_bug_reaches_handoff`：给一个故意 `assert 1==2` 的工程 + low-confidence 兜底（confidence=0.55），断言最终 stopped_reason == 'stopped_on_code_bug'（证明低置信 code_bug 被门控 handoff，而非误修）。
 
 **口头自检 3 问**：
 Q1：为什么图里 START / END 节点要显式加？（答：LangGraph 规范，不加没法确定入口；多个入口容易造成调试混乱）
 Q2：为什么 compile() 调用后才允许 invoke？（答：编译后做了一些拓扑检查，能提前发现缺边缺节点）
-Q3：为什么 healgraph 里加专门的 handoff 边而不是"节点里 return END"？（答：handoff 是"路径终点"，以后加 LangSmith trace 会单独标出来，统计 handoff 率才准确）
+Q3：为什么 heal 图里加专门的 handoff 边而不是"节点里 return END"？（答：handoff 是"路径终点"，以后加 LangSmith trace 会单独标出来，统计 handoff 率才准确）
 
 **锚点文件**：[graph/runner.py](../lang_agent/graph/runner.py)。
 
 ---
 
-# S4 · 入口 + 简历可讲（D20~D21）——交付给"非你本人"也能使用，然后正式写简历 bullet
+# S4 · 入口 + 评测 + 简历可讲（D20~D21）——交付给"非你本人"也能使用，然后正式写简历 bullet
 
 ## Day 20：CLI 三条命令 + Streamlit 最小版 + Skill 说明文档
 
@@ -498,55 +502,60 @@ Q3：为什么 healgraph 里加专门的 handoff 边而不是"节点里 return E
 
 **你要做**：
 
-1. 复刻 cli.py（generate / heal / report 三个 click 子命令；--config / -i / -o / -t 参数）；
+1. 复刻 cli.py（generate / heal / report 三个 click 子命令；--config / -i / -o / -t / -r / --enable-long-memory 等参数）；
 2. 复刻 app.py（Streamlit：上传 yaml + 按钮 generate + 按钮 heal + 显示 RunReport JSON）；
 3. 写 `.claude/skills/api-test-agent/SKILL.md` 一份（哪怕只有 20 行，说明 Skill 的触发词/输入输出）。
 
 **3 条验收单测**：
 
-1. `python cli.py report --report-path .cache/latest_run_report.json` 命令运行后退出码 0（只要存在报告就能打印）；
+1. `python cli.py report` 命令运行后退出码 0（有历史报告则打印 JSON，无则打印提示）；
 2. Streamlit `streamlit run app.py` 能启动（你可以开浏览器看一眼首页加载不出错就行）；
 3. `.claude/skills/api-test-agent/SKILL.md` 文件存在且描述了输入输出。
 
 **口头自检 3 问**：
 Q1：为什么 report 命令单独拎出来？（答：面试/debug 时只看报告，不想重跑 generate+heal）
-Q2：CLI 的默认输出路径为什么放在 config.yaml 里而不是写死？（答：让 CI 切换到 output/generated 更容易，用户本地也能自己改）
+Q2：report 命令读的是哪个文件？（答：默认 `output/latest_run_report.json`，也可 `--task-id` 指定某个任务；不在 config 里配）
 Q3：Skill 文档的 MCP 理念怎么体现在实际代码里？（答：Agent 通过 SKILL.md 协议就能调用 generate/heal，不必改代码对接；这就是"可被编排"的能力）
 
 **锚点文件**：[cli.py](../cli.py)、[app.py](../app.py)。
 
 ---
 
-## Day 21：自测 13 passed 全绿 + 1分钟/3分钟 话术 + 正式写简历
+## Day 21：eval/ 评测回测 + 1分钟/3分钟话术 + 正式写简历
 
 **今天的任务清单（不要跳）**：
 
-1. 在 fork 目录里跑：`python -m pytest tests -q`。**今天的目标是让你自己的 fork 仓库能达到至少 10+ passed**（不要急，缺哪个就补哪个；允许今天 + 明天一起调）。
-2. 录 1 分钟语音："项目定位 + 三层亮点（门控/记忆/工程化）+ 结果"。
-3. 录 3 分钟语音：STAR 版讲解（S 痛点 / T 约束 / A 四个技术动作 / R 13 passed + 7 ADR + 三入口）。
-4. 把你**真的能讲 3 分钟 + 被追问 3 层不卡壳**的 bullet 正式写进简历（按之前给你的"强化版 6 条"选 4~6 条）。
+1. **读懂并跑通 eval/ 评测回测**：
+   - 先读 [eval/README.md](../eval/README.md) 和 [eval/cases.yaml](../eval/cases.yaml)，理解 7 个 case 分 4 类能力（repair 自愈 / gate 门控 / generation 生成 / memory 记忆）。
+   - 在本仓库跑：`python eval/runner.py --dry-run`（看加载）→ `python eval/runner.py --suite memory`（快速验证判分逻辑，2 个 case 应 PASS）。
+   - 口头能讲清 `short_memory_reuse` 和 `no_pollution` 两个 case 的判分规则（这是"评测体系"最亮眼的两个点）。
+2. **你的 fork 自测全绿**：在 fork 目录里跑 `python -m pytest tests -q`，目标是把你 21 天写的验收单测全部跑绿（数量 = 你实际写的条数，不强制固定值）。
+3. 录 1 分钟语音："项目定位 + 三层亮点（门控/记忆/工程化）+ 结果"。
+4. 录 3 分钟语音：STAR 版讲解（S 痛点 / T 约束 / A 四个技术动作 / R 自测全绿 + 7 条 ADR + eval 评测 + 三入口）。
+5. 把你**真的能讲 3 分钟 + 被追问 3 层不卡壳**的 bullet 正式写进简历（按之前给你的"强化版"选 4~6 条）。
 
 **3 条最终验收（今天不要求全部做到，但本周内必须做到）**：
 
-1. `pytest tests -q` 输出 13 passed（对照本仓库 tests 逐个补齐）。
+1. 你的 fork 里 `pytest tests -q` 全绿，且本仓库 `python eval/runner.py --suite memory` 能跑出 2/2 PASS。
 2. 让一个同学/朋友当面试官，随机从 ADR-01~ADR-07 抽 3 条提问，你能不看资料答出。
 3. 现场 demo：`generate + heal + report` 三段命令不翻资料 5 分钟内跑完。
 
 **口头终极自检（面试前反复背）**：
-Q1：这个项目和"网上一个调 OpenAI 修脚本的 demo"有什么本质不同？（答：我有结构化诊断+置信度门控、双层记忆validated-only、AST 门控防删断言、原子写防半写、异常家族+handoff 可观测、三入口交付——是"工程化 Agent Harness"，不是"单次调用 prompt"）
+Q1：这个项目和"网上一个调 OpenAI 修脚本的 demo"有什么本质不同？（答：我有结构化诊断+置信度门控、双层记忆validated-only、AST 门控防删断言、原子写防半写、异常家族+handoff 可观测、eval 评测回测可量化、三入口交付——是"工程化 Agent Harness"，不是"单次调用 prompt"）
 Q2：你在这个项目里最骄傲的 1 件事是什么？（答：把"AI 容易乱修"这个最大风险，拆成 4 层防御——低置信不接/门控拦删断言/记忆只写验证过/异常都写报告，让系统"修不好就停并解释原因"，而不是"硬修把系统修坏"）
-Q3：这个项目下一步你会升级什么？（答：接 DockerExecutor 沙箱执行修复后的 pytest、output 三目录统一、GitHub Actions 让 Build 徽章变真、加 50 条评测集得出真实修复成功率）
+Q3：这个项目下一步你会升级什么？（答：接 DockerExecutor 沙箱执行修复后的 pytest、把评测集从 7 条扩到 50 条算真实修复成功率、GitHub Actions 让评测徽章变真）
 
 **锚点文件**：
 [design_decisions.md](design_decisions.md) 七条 ADR；
-[README.md](../README.md) §测试基线 13 passed。
+[README.md](../README.md) §11 Agent 评测；
+[eval/README.md](../eval/README.md)、[eval/cases.yaml](../eval/cases.yaml)。
 
 ---
 
 ## 附：复刻完成标准（只有 3 条，满足就可以写简历）
 
-1. **你自己的 fork 仓库里 `pytest tests -q` 能跑出 >=10 passed**；
-2. **你能不翻资料口头讲出 S1~S3 的 7 条口头自检**；
+1. **你自己的 fork 仓库里 `pytest tests -q` 全绿（你写的验收单测）**；
+2. **你能不翻资料口头讲出 S1~S3 的 7 条口头自检，并讲清 eval/ 至少 1 个 case 的判分逻辑**；
 3. **你写在简历上的每条 bullet，都能指到 fork 里的具体代码位置**。
 
 只要做到这 3 条，这个项目就是你的，面试时面对三连问完全不虚。祝顺利！
